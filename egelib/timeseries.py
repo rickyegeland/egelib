@@ -361,6 +361,23 @@ def peaks(periods, pgram, thresh=0):
     peaks = peak_indices(pgram, thresh=thresh)
     return periods[peaks]
 
+def peak_uncertainty(t, S, P):
+    """Uncertainty estimate for peak period P found in time series.
+
+    Ref:
+      Kovacs 1981
+      Baliunas et al. 1985
+      Horne & Baliunas 1986
+    """
+    t = t.jyear
+    N = S.size
+    T = t.max() - t.min()
+    amp, phase, offset = find_sine_params(t, S - S.mean(), P)
+    sine = sinefunc(t, P, amp, phase, offset)
+    residual = (S - S.mean()) - sine
+    sigma = residual.std()
+    #print "P=%0.3f N=%i T=%0.1f amp=%0.3g sigma=%0.3g" % (P, N, T, amp, sigma)
+    return 3. * sigma * P**2 / (4. * T * amp * np.sqrt(N))
 
 #
 # Monte Carlo
@@ -527,6 +544,21 @@ def find_sine(t, y, P, t_out=None):
     amp, phase, offset = find_sine_params(t, y, P)
     return sinefunc(t_out, P, amp, phase, offset)
 
+def subtract_sine(t, y, P):
+    """Remove a sine of period P from the data"""
+    f = np.zeros(y.size)
+    amp, phase, offset = find_sine_params(t.jyear, y, P)
+    params = (P, amp, phase, offset)
+    f += sinefunc(t.jyear, P, amp, phase, offset)
+    return y - f, params
+
+def sum_sines(t, param_set):
+    """Evaluate the sum of a set of sines on a time axis"""
+    f = np.zeros(t.jyear.size)
+    for params in param_set:
+        f += sinefunc(t.jyear, *params)
+    return f
+
 def residual_lombscargle(t, y, P, **kwargs):
     """Lomb-Scargle periodogram with period P removed from time series"""
     sine = find_sine(t.jyear, y, P)
@@ -538,23 +570,310 @@ def samesamp_lombscargle(t, y, P, **kwargs):
     sine = find_sine(t.jyear, y, P)
     return lombscargle(t, sine, **kwargs)
 
-def peak_uncertainty(t, S, P):
-    """Uncertainty estimate for peak period P found in time series.
-
-    Ref:
-      Kovacs 1981
-      Baliunas et al. 1985
-      Horne & Baliunas 1986
+def lowpass_model(t, y, lowthresh=10.0, sigthresh=10.0, max_iter=3, Pres=1000., plot_steps=True):
+    """Find a model of the low frequency behavior of the given data
+    
+    The model parameters returned may be used with sum_sines() to
+    evaluate the model.
     """
-    t = t.jyear
-    N = S.size
-    T = t.max() - t.min()
-    amp, phase, offset = find_sine_params(t, S - S.mean(), P)
-    sine = sinefunc(t, P, amp, phase, offset)
-    residual = (S - S.mean()) - sine
-    sigma = residual.std()
-    #print "P=%0.3f N=%i T=%0.1f amp=%0.3g sigma=%0.3g" % (P, N, T, amp, sigma)
-    return 3. * sigma * P**2 / (4. * T * amp * np.sqrt(N))
+    def plot_pgram(t, y, periods=None, title=None):
+        periods, power = pgram(t, y, periods=periods)
+        plt.figure(figsize=(16,3))
+        ax = plt.gca()
+        ax.plot(periods, power, 'k-')
+        if title is not None:
+            ax.set_title(title)
+        ax.set_xlabel('Period [yr]')
+        ax.set_ylabel('Power')
+    
+    if plot_steps:
+        plot_pgram(t, y, title='Original (std=%0.3g)' % y.std())
+
+    y_hipass = y
+    model_params = []
+    newP = np.arange(lowthresh, duration(t, 'yr'), lowthresh/Pres)
+    for i in range(max_iter):
+        newP, power = pgram(t, y_hipass, periods=newP)
+        pk_ixs = find_peaks(power, thresh=sigthresh)
+        if pk_ixs.size == 0:
+            break
+        peaks = np.sort(newP[pk_ixs])[::-1]
+        pk = peaks[0]
+        y_hipass, subparams = subtract_sine(t, y_hipass, pk)
+        model_params.append(subparams)
+        if plot_steps:
+            plot_pgram(t, y_hipass, title='Round %i result: subtracted %0.3f (std=%0.3g)' % (i, pk, y_hipass.std()))
+
+    if plot_steps:
+        model_points = y.size
+        t_model = np.linspace(t.jyear.min(), t.jyear.max(), model_points)
+        t_model = astropy.time.Time(t_model, format='jyear', scale='utc')
+        y_model = sum_sines(t_model, model_params)
+        y_model += y.mean()
+        y_residual = y - sum_sines(t, model_params)
+        plot_pgram(t_model, y_model, title='Lo-Pass Model')
+        plot_pgram(t, y_residual, title='Original - Lo-Pass Model (std=%0.3g)' % (y_residual.std()))
+
+    return model_params
+
+#
+# Short-Time Lomb Scargle Analysis
+#
+def STLS():
+    # TODO: need to generalize and simplify this
+    def plot_pgram(t, S, periods=None, title=None):
+        # Whole-series periodogram
+        periods, power = pgram(t, S, periods=periods)
+        plt.figure(figsize=(16,4))
+        ax = plt.gca()
+        ax.plot(periods, power, 'k-')
+        if title is not None:
+            ax.set_title(title)
+        ax.set_xlabel('Period [yr]')
+        ax.set_ylabel('Power')
+        
+    t = t_all
+    S = S_all
+    edges = season_edges(t).jyear
+    Nseasons = 5
+    dP = 0.005 # years
+    minP = 1.1 # years
+    maxP = Nseasons/2. # years
+    periods = np.arange(minP, maxP, dP)
+    print "Period search: dP=%0.3f minP=%0.3f maxP=%0.3f N_P=%i" % (dP, minP, maxP, periods.size)
+    
+    plot_pgram(t, S, periods, title='Original')
+    S_lowpass = sum_sines(t, lowpass_model_params) + S_all.mean()
+    S = S - S_lowpass   
+    plot_pgram(t, S, periods, title='Residual')
+        
+    Nwindows = len(edges) - Nseasons
+    Npoints = np.zeros((Nwindows))
+    var = np.zeros((Nwindows))
+    tcenter = np.zeros((Nwindows))
+    z_thresh = np.zeros((Nwindows))
+    pk_params = np.zeros((Nwindows, 5))
+    Pmatrix = np.zeros((Nwindows, periods.size))
+    
+    # Equal-interval least-squares params search
+    lsq_periods = np.arange(minP, maxP, 0.1)
+    lsq_matrix = np.zeros((Nwindows, lsq_periods.size, 4))
+    print "Equi-interval Phase search: n_periods=%i n_elem=%i" % (lsq_periods.size, lsq_matrix.size)
+    
+    # Significant peaks least-squares params search
+    sigranks, sigpeaks = get_peak_range(minP, maxP)
+    sig_lsq_matrix = np.zeros((Nwindows, sigpeaks.size, 4))
+    print "Sig-Peak Phase search: n_periods=%i n_elem=%i" % (sigpeaks.size, sig_lsq_matrix.size)
+
+    for ix in range(0, len(edges) - Nseasons):
+        # Time Series
+        tstart = edges[ix]
+        tstop = edges[ix + Nseasons]
+        tcenter[ix] = tstart + (tstop - tstart) / 2.
+        sel = (t_all.jyear >= tstart) & (t_all.jyear <= tstop)
+        t_win = t[sel]
+        S_win = S[sel]
+        N = S_win.size
+        Npoints[ix] = N
+        var[ix] = np.var(S_win)
+        label = "%02i %0.1f N=%i var=%0.3g" % (ix, tcenter[ix], Npoints[ix], var[ix])
+        print label
+        
+        # Time Series
+        plt.figure(figsize=(9,2))
+        ax1 = plt.subplot(1,2,1)
+        ax1.plot(t_win.jyear, S_win, 'k.')
+        ax1.set_title(label)
+        ax1.set_xlabel("Year")
+        ax1.set_ylabel("S")
+        ax1.xaxis.get_major_formatter().set_useOffset(False)
+        ax1.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+        
+        # Periodogram
+        ax2 = plt.subplot(1,2,2)
+        periods, power = pgram(t_win, S_win, periods=periods)
+        Pmatrix[ix] = power
+        peaks = find_peaks(power)
+        if peaks.size > 0:
+            pk_period = periods[peaks][0]
+            pk_power = power[peaks][0]
+            title = "peak=%0.3f" % pk_period
+        else:
+            pk_period = None
+            title = "no peak"
+        ax2.plot(periods, power, 'k-')
+        ax2.plot(periods[peaks], power[peaks], 'bd', ms=3)
+        ax2.set_title(title)
+        ax2.set_xlabel('Period [yr]')
+        ax2.set_ylabel('Power')
+        
+        # Significance
+        mc = pgram_mc(t_win, 2000, periods=periods)
+        zmin, FAP = FAP_mc(mc['peak_amps'])
+        Ni = FAP_fit(zmin, FAP)
+        thresh = 0.001
+        sig = 1.0 - thresh
+        z_thresh[ix] = FAP_threshold(sig, Ni)
+        print "FAP Ni=%0.3f thresh=%0.2g%% z_thresh=%0.3f z_est=%0.3f" % (Ni, thresh*100., z_thresh[ix], FAP_threshold(sig, N/2.))
+        plt.axhline(z_thresh[ix], color='r')
+        
+        # Peak phase, Amplitude
+        if pk_period is not None:
+            amp, phase, offset = find_sine_params(t_win.jyear, S_win, pk_period)
+            t_sin = np.linspace(t_win.jyear.min(), t_win.jyear.max(), 100)
+            y_sin = sinefunc(t_sin, pk_period, amp, phase, offset)
+            ax1.plot(t_sin, y_sin + S_win.mean(), 'b-')
+            pk_params[ix] = [pk_period, pk_power, amp, phase, offset]
+            print "peak amp phase offset:", pk_params[ix]
+            
+        # Equi-Interval Least squares phase search
+        for j, P in enumerate(lsq_periods):
+            amp, phase, offset = find_sine_params(t_win.jyear, S_win, P)
+            lsq_matrix[ix,j] = [P, amp, phase, offset]
+            
+        # Sig-Peaks Least Squares phase search
+        for j, P in enumerate(sigpeaks):
+            try:
+                amp, phase, offset = find_sine_params(t_win.jyear, S_win, P)
+            except RuntimeError as e:
+                print "ERROR: least-squares fit for P=%0.3f failed:" % P, e
+                sig_lsq_matrix[ix,j] = np.ones(4) * np.nan
+                continue
+            sig_lsq_matrix[ix,j] = [P, amp, phase, offset]
+        
+    return (tcenter, periods, Pmatrix, Npoints, var, z_thresh, pk_params, lsq_matrix, sig_lsq_matrix)
+
+def plot_STLS(stls_result):
+    # TODO: need to generalize and simplify this
+    (tcenter, periods, Pmatrix, Npoints, var, z_thresh, pk_params, lsq_matrix, sig_lsq_matrix) = stls_result
+    t_peaks1 = []
+    t_peaks2 = []
+    peaks1 = []
+    peaks2 = []
+    for ix in range(Pmatrix.shape[0]):
+        pk_ixs = find_peaks(Pmatrix[ix], z_thresh[ix])
+        pks = periods[pk_ixs]
+        t = tcenter[ix]
+        #print "ix=%i t=%0.1f pks=%s" % (ix, t, pks)
+        if pks.size > 0:
+            t_peaks1.append(t)
+            peaks1.append(pks[0])
+        if pks.size > 1:
+            t_peaks2.append([t])
+            peaks2.append(pks[1])
+        
+    X, Y = np.meshgrid(tcenter, periods)
+    fig = plt.figure(figsize=(16,8))
+    gs = matplotlib.gridspec.GridSpec(3, 3, height_ratios=[1,5,1], width_ratios=[20, 1, 4])
+    
+    labelfont = 20
+    tickfont = 16
+    ticklength = 5
+    tickwidth = 1
+    Ncontlevels = 100
+    contmax = 50
+    #timelim = (X.min(), X.max())
+    timelim = (1969.0, 2015.0)
+    def tick_params(ax):
+        ax.tick_params(axis='both', which='major', labelsize=tickfont, length=ticklength+4, width=tickwidth)
+        ax.tick_params(axis='both', which='minor', length=ticklength, width=tickwidth)
+    
+    # Contour Plot
+    ax1 = plt.subplot(gs[3])
+    
+    Z = Pmatrix.transpose() / Npoints
+    print "Z min=%0.3g max=%0.3g" % (Z.min(), Z.max())
+    cont = ax1.contourf(X, Y, Z, levels=np.linspace(0,Z.max(),Ncontlevels), cmap='gray')
+    #ax1.contour(X, Y, Z, [z_thresh.mean()], colors=['c'], linestyles=[':'])
+    
+    for tmin in (1977.1, 1986.7, 1998.4, 2013.9):        
+        ax1.axvline(tmin, color='b', linewidth=2, linestyle=':')
+    for tmax in (1969.0, 1981.2, 1993.7, 2005.8):
+        ax1.axvline(tmax, color='r', linewidth=2, linestyle='--')
+    
+    Z2 = Pmatrix.transpose()/z_thresh  # units of 99.9% sig thresh
+    #cont = ax1.contourf(X, Y, Z, levels=np.linspace(0,Z.max(),Ncontlevels), cmap='gray')
+    ax1.contour(X, Y, Z2, [1.], colors=['w'], linestyles=[':'])
+    insert(cont) # avoid bad PDF rendering
+    ax1.set_xlim(timelim)
+    ax1.set_ylim(Y.min(), Y.max())
+    ax1.plot(t_peaks1, peaks1, 'wo', ms=8)
+    ax1.plot(t_peaks2, peaks2, 'wo', ms=5)
+    ax1.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(5))
+    ax1.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(1))
+    ax1.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.2))
+    ax1.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.1))
+    tick_params(ax1)
+    plt.setp(ax1.get_xticklabels(), visible=False)
+    ax1.tick_params(axis='x', which='both', color='w')
+    ax1.set_ylabel("Period [yr]", fontsize=labelfont)
+    plt.subplots_adjust(hspace=0.1, wspace=0.02)
+      
+    # Color Bar
+    axc = plt.subplot(gs[4])
+    cbar = fig.colorbar(cont, cax=axc, use_gridspec=True, ticks=np.arange(0, 0.23, 0.02))
+    cbar.solids.set_rasterized(True) # avoid bad PDF rendering
+    cbar.ax.tick_params(which='major', labelsize=tickfont, length=ticklength+4, width=tickwidth) 
+    cbar.set_label("Normalized Power", fontsize=labelfont, rotation=270, labelpad=25)
+    
+    # Integration Plot
+    Zint = Z.sum(axis=1)/Z.shape[1]
+    print "Zint min=%0.3g max=%0.3g" % (Zint.min(), Zint.max())
+    ax2 = plt.subplot(gs[5], sharey=ax1)
+    pos1 = ax2.get_position() # get the original position 
+    pos2 = [pos1.x0 + 0.055, pos1.y0,  pos1.width/1.2, pos1.height] 
+    ax2.set_position(pos2) # set a new position
+    ax2.set_ylim(ax1.get_ylim())
+    ax2.plot(Zint, periods, 'k-')
+    ax2.yaxis.tick_right()
+    ax2.yaxis.set_label_position("right")
+    ax2.set_ylabel("Period [yr]", rotation=270, labelpad=25, fontsize=labelfont)
+    tick_params(ax2)
+    ax2.set_xlim((0.03,0.08))
+    ax2.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(0.04))
+    ax2.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.01))
+    ax2.set_xlabel("Integrated Power", fontsize=labelfont)
+
+    # Npoints Plot
+    ax3 = plt.subplot(gs[0], sharex=ax1)
+    ax3.set_xlim(timelim)
+    ax3.plot(tcenter, Npoints, 'k.-')
+    ax3.set_ylabel('N', fontsize=labelfont)
+    ax3.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(150))
+    ax3.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(50))
+    tick_params(ax3)
+    plt.setp(ax3.get_xticklabels(), visible=False)
+    
+    # Amplitude Plot
+    ax4 = plt.subplot(gs[6], sharex=ax3)
+    ax4.set_xlim(timelim)
+    periods = pk_params[:,0]
+    power = pk_params[:,1]
+    amps = 2.* np.abs(pk_params[:,2]) # convert to peak-to-peak
+    sel = (power > z_thresh) & (amps > 0.001)
+    #sel = (power > z_thresh) & (amps > 0.001) & (periods <= 2.0)
+    #sel = (power > z_thresh) & (amps > 0.001) & (tcenter > 1977) & (tcenter < 1986.5)
+    Acyc = 2.*amps[sel] / S_all.mean()
+    statdump(periods[sel], "periods   ", precision=3)
+    statdump(amps[sel],    "amplitudes", precision=5)
+    statdump(Acyc,         "Acyc      ", precision=5)
+    t = t_all
+    S = S_all
+    S_lowpass = sum_sines(t, lowpass_model_params) + S_all.mean()
+    S_hipass = S - S_lowpass
+    t_model = astropy.time.Time(np.linspace(timelim[0], timelim[1], 1000), format='jyear', scale='utc')
+    S_lowpass = sum_sines(t_model, lowpass_model_params) + S_all.mean()
+    ax4.plot(t_model.jyear, S_lowpass - S_model_min, 'r-')
+    ax4.plot(tcenter[sel], amps[sel], 'wo', ms=8)
+    ax4.set_xlabel("5-yr Window Center", fontsize=labelfont)
+    ax4.set_ylabel(r'$\Delta$ S', fontsize=labelfont)
+    ax4.set_ylim(0.,0.05)
+    ax4.set_yticks([0.01, 0.03, 0.05])
+    tick_params(ax4)
+
+    #fig.tight_layout()
+    fig.savefig('stls.pdf', bbox_inches='tight', dpi=300)
+
 
 
 #
