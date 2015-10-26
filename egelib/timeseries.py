@@ -54,6 +54,30 @@ def intervals(t, unit=None):
         raise Exception('invalid unit %s' % unit)
     return t_sort[1:] - t_sort[0:-1]
 
+def median_nyquist(t, unit='yr'):
+    """Return the "median Nyquist frequency", defined as 0.5/median_interval
+    
+    'unit' is the inverse unit returned and may be 'yr', 'd', or 's'.
+
+    TODO: document parameters
+    """
+    ivals = intervals(t, unit)
+    f_median_nyquist = 0.5/np.median(ivals) # 1/unit
+    return f_median_nyquist
+
+def critical_periods(t, unit='yr'):
+    """Compute various critical time periods and frequencies from a timeseries
+
+    TODO: document parameters
+    """
+    Nsamp = len(t)
+    T = duration(t, unit)
+    f_nyquist_eq = 0.5/(T/Nsamp)
+    f_nyquist_med = median_nyquist(t, unit)
+    return { 'duration' : T, 
+             'nyquist_eq' : 1.0/f_nyquist_eq,
+             'nyquist_med' : 1.0/f_nyquist_med }
+
 def find_coincident(t1, t2, dt, unit='d'):
     """
     Find coincident samples within dt between two time axes
