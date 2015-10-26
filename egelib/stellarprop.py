@@ -1,3 +1,5 @@
+import numpy as np
+
 def noyes84_logRpHK(S, BmV):
     """Return R prime HK, the color-corrected activity index from Noyes et al. 1984"""
     log_C_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
@@ -50,3 +52,22 @@ def t_chromo_soderblom(logRpHK, a=-1.50, b=2.25):
 # Guinan & __ 2008 Fig 1
 def t_gyro_guinan(P, y0=1.865, a=-2.854, b=0.08254):
     return ( -(np.log10(P) + y0) / a )**(1./b)
+
+def differential_rotation(lat, A, B, C):
+    """Return standard differential rotation profile \Omega = A + B*sin(lat)**2 + C*sin(lat)**4
+
+    Input:
+     - lat <float> : latitude in degrees
+    \Omega Units depnd on units of coefficients.
+    """
+    lat *= np.pi/180.
+    return A + B * np.sin(lat)**2 + C * np.sin(lat)**4
+
+def omega_sun_snodgrass90(lat):
+    """Solar surface rotation in deg/day as a function of latitude in degrees
+
+    Based on tracking doppler features in the solar photosphere.
+
+    Reference: Snodgrass and Ulrich 1990, ApJ
+    """
+    return differential_rotation(lat, 14.71, -2.39, -1.78)
