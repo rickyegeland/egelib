@@ -1,30 +1,82 @@
 import numpy as np
 
 def noyes84_logRpHK(S, BmV):
-    """Return R prime HK, the color-corrected activity index from Noyes et al. 1984"""
-    log_C_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
-    R_HK = 1.340E-4 * 10**log_C_cf * S
-    log_R_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
-    Rp_HK = R_HK - 10**log_R_phot
-    log_Rp_HK = np.log10(Rp_HK)
-    return log_Rp_HK
+    """Return R prime HK, the color-corrected activity index
+
+    Ref: Noyes et al. 1984
+    """
+    logC_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
+    R_HK = 1.340E-4 * 10**logC_cf * S
+    logR_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
+    Rp_HK = R_HK - 10**logR_phot
+    logRp_HK = np.log10(Rp_HK)
+    return logRp_HK
+
+def noyes84_logRpHK_error(S, e_S, BmV, e_BmV):
+    """Uncertainty in logRpHK"""
+    # Note: uncertainty dominated by e_BmV; very insensitive to S
+    ln10 = np.log(10)
+    e_logC_cf = np.abs(3*1.13*BmV**2 - 2*3.91*BmV + 2.84) * e_BmV
+    logC_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
+    e_C_cf = np.abs(logC_cf * ln10 * e_logC_cf)
+    C_cf = 10 **logC_cf
+    e_R_HK = 1.340E-4 * np.sqrt(C_cf**2 * e_C_cf**2 + S**2 * e_S**2)
+    e_logR_phot = np.abs(2 * 1.918 * BmV - 3 * 2.893 * BmV**2 ) * e_BmV
+    logR_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
+    print "XXX: logR_phot=%f e_logR_phot=%f" % (logR_phot, e_logR_phot)
+    e_R_phot = np.abs(logR_phot * ln10 * e_logR_phot)
+    e_Rp_HK = np.sqrt(e_R_HK**2 + e_R_phot**2)
+    print "XXX: e_R_HK=%f e_R_phot=%f e_Rp_HK=%f" % (e_R_HK, e_R_phot, e_Rp_HK)
+    R_HK = 1.340E-4 * 10**logC_cf * S
+    Rp_HK = R_HK - 10**logR_phot
+    logRp_HK = np.log10(Rp_HK)
+    print "XXX: Rp_HK=%f logRp_HK=%f" % (Rp_HK, logRp_HK)
+    e_logRp_HK = np.abs(e_Rp_HK / (Rp_HK * ln10))
+    return e_logRp_HK
 
 def noyes84_tau_c(BmV):
-    """Return tau_c, the turbulent convective turnover time [days] from Noyes et al. 1984"""
+    """Return tau_c, the turbulent convective turnover time [days]
+
+    Ref: Noyes et al. 1984"""
+    log_tau_c = np.zeros_like(BmV)
     x = 1 - BmV
-    if x > 0:
-        log_tau_c = 1.362 - 0.166*x + 0.025*x**2 - 5.323*x**3
-    else:
-        log_tau_c = 1.362 - 0.14*x
+    sel = x > 0
+    notsel = np.logical_not(sel)
+    log_tau_c[sel] = 1.362 - 0.166*x[sel] + 0.025*x[sel]**2 - 5.323*x[sel]**3
+    log_tau_c[notsel] = 1.362 - 0.14*x[notsel]
     return 10**log_tau_c # units: days
 
 def noyes84_rossby(P, BmV):
-    """Return the Rossby number = P[days]/tau_c, using tau_c from Noyes et al. 1984"""
+    """Return the Rossby number = P[days]/tau_c, using tau_c
+    
+    Ref: Noyes et al. 1984"""
     tau_c = noyes84_tau_c(BmV)
     return P/tau_c
 
+def bv2teff_noyes84(BmV):
+    """Rough conversion from B-V to T_eff
+
+    Ref: Noyes et al. 1984
+      "fits Johnson (1966) data within 0.002 dex for 0.4 < BmV < 1.4"
+    """
+    logTeff = 3.908 - 0.234*BmV
+    return 10 ** logTeff
+
+def teff2bv_noyes84(Teff):
+    """Rough conversion from Teff to B-V
+    
+    Ref: Noyes et al. 1984
+      "fits Johnson (1966) data within 0.002 dex for 0.4 < BmV < 1.4"
+    """
+    logTeff = np.log10(Teff)
+    BmV = (3.908 - logTeff) / 0.234
+    return BmV
+
 def saar99_tau_c_E(BmV):
-    """Return tau_c, the turbulent convective turnover time [days] from Saar & Brandenburg 1999"""
+    """Return tau_c, the turbulent convective turnover time [days]
+
+    Ref: Saar & Brandenburg 1999
+    """
     if BmV < 1:
         tau_c = -3.3300 + 15.382*BmV - 20.063*BmV**2 + 12.540*BmV**3 - 3.1466*BmV**4
     else:
@@ -32,6 +84,10 @@ def saar99_tau_c_E(BmV):
     return tau_c
 
 def saar99_rossby_empirical(P, BmV):
+    """Return the Rossby number = P[days]/tau_c, using tau_c
+
+    Ref: Saar & Brandenburg 1999
+    """
     tau_c = saar99_tau_c_E(BmV)
     return P/(4.*np.pi*tau_c)
 
