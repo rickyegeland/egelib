@@ -206,7 +206,7 @@ def plot_edges(t, y, label):
     plt.title('%s Season Edges' % label)
     plt.margins(0.05)
 
-def season_indices(t):
+def season_indices(t, edges=None):
     """
     Return indice array for which maps time sample to a season
 
@@ -215,7 +215,8 @@ def season_indices(t):
     >>> for i in range(len(t)):
     >>>     print "Time point %i at %s is in season %i" % (i, t[i], seasons[i])
     """
-    edges = season_edges(t)
+    if edges is None:
+        edges = season_edges(t)
     season_ixs = np.digitize(t.jyear, edges.jyear)
     N = season_ixs.size
     seasons = []
@@ -224,7 +225,7 @@ def season_indices(t):
         seasons.append(season_members)
     return seasons
 
-def seasonal_series(t, y):
+def seasonal_series(t, y, edges=None):
     """
     Return array of time series for each season.
     
@@ -233,7 +234,7 @@ def seasonal_series(t, y):
     >>> for i in range(len(ts)):
     >>>     print "Season %i has time samples %s and data %s" % (i, ts[i], ys[i])
     """
-    season_ixs = season_indices(t)
+    season_ixs = season_indices(t, edges=edges)
     ts = []
     ys = []
     for season in season_ixs:
@@ -241,7 +242,7 @@ def seasonal_series(t, y):
         ys.append(y[season])
     return ts, ys
 
-def seasonal_means(t, y):
+def seasonal_means(t, y, edges=None):
     """
     Calculate seasonal means for some timeseries data
     
@@ -255,13 +256,32 @@ def seasonal_means(t, y):
      - <numpy.ndarray>       : standard deviation of y in each season
      - <numpy.ndarray>       : count of measurements in each season
     """
-    ts, ys = seasonal_series(t, y)
+    ts, ys = seasonal_series(t, y, edges=edges)
     t_means = [t.jyear.mean() for t in ts]
     t_means = astropy.time.Time(t_means, format='jyear', scale=t.scale)
     y_means = np.array([y.mean() for y in ys])
     y_std = np.array([y.std() for y in ys])
     y_N = np.array([y.size for y in ys])
     return t_means, y_means, y_std, y_N
+
+def seasonal_calc(t, y, func, edges=None):
+    """
+    Calculate seasonal means for some timeseries data
+    
+    Input:
+     - t <astropy.time.Time> : time axis
+     - y <numpy.ndarray>     : data axis
+     - func <function>       : function which takes array of y
+     
+    Output:
+     - <astropy.time.Time>   : seasonal mean time
+     - <numpy.ndarray>       : func(y) for each season
+    """
+    ts, ys = seasonal_series(t, y, edges=edges)
+    t_means = [t.jyear.mean() for t in ts]
+    t_means = astropy.time.Time(t_means, format='jyear', scale=t.scale)
+    f_y = np.array([func(y) for y in ys])
+    return t_means, f_y
 
 def sigmanorm(y):
     """Rescale data to units of its standard deviation"""
@@ -960,3 +980,27 @@ def fft(t, signal, oversample=1, minP=None, maxP=None):
     power = power[hipass]
 
     return (freqs, power)
+
+def boxsmooth(x, len, keepends=True):
+    if len % 2 == 0:
+        len += 1
+    window = np.ones(len, 'd')
+    smoothed = np.convolve(window/window.sum(), x, mode='valid')
+    if keepends:
+        xs = x.copy()
+        halflen = (len-1)/2
+        xs[halflen:-halflen] = smoothed
+        smoothed = xs
+    return smoothed
+
+def decimal_hour(t):
+    """Return the hour of the day for every time in t"""
+    datetime = t.datetime
+    result = []
+    for d in datetime:
+        hour = d.hour
+        minute = d.minute
+        second = d.microsecond / 1e6
+        dec_hour = hour + (minute/60.) + (second/3600.)
+        result.append(dec_hour)
+    return np.array(result)
