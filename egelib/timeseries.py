@@ -1,9 +1,12 @@
 import numpy as np
+import matplotlib as mpl
 from matplotlib import pyplot as plt
 import scipy.signal
 import scipy.optimize
 import astropy.time
 import timeit
+
+# TODO: move plotting functions somewhere else
 
 def duration(t, unit=None):
     """
@@ -1004,3 +1007,119 @@ def decimal_hour(t):
         dec_hour = hour + (minute/60.) + (second/3600.)
         result.append(dec_hour)
     return np.array(result)
+
+def lag_indices(t, dt):
+    # Find the indices of t such that t + dt exists in t,
+    # with t quantized in days
+    jds = t.jd
+    # Center measurement time distribution to middle of julian day to
+    # minimize problems with observations on bin edges
+    fracs = jds - jds.astype('i')
+    jds += (0.5 - np.median(fracs))
+    # Quantize to integer days ranging from 0 to maxday
+    days = np.floor(jds).astype('i')
+    minjd = days.min()
+    days = days - minjd
+    maxday = days.max()
+    # Build new evenly sampled array of days from 0 to maxday
+    # and a boolean array indicating which of those days have elements
+    daylist = np.arange(maxday+1)
+    setdays = np.zeros(maxday+1, dtype='bool')
+    setdays[days] = True
+    # Build a list of indices for days which have measurements
+    ixmap = np.zeros(maxday+1)
+    ixmap[:] = np.nan
+    ixmap[setdays] = np.arange(setdays.sum())
+    # Build a boolean array indicating which days also have a
+    # measurement dt days in the future
+    match = np.zeros(maxday+1, dtype='bool')
+    match[0:-dt] = np.logical_and(setdays[0:-dt], setdays[dt:])
+    # Build a list of indices of t with (1) days for which a
+    # measurements exists dt days in the future (2) the index of the
+    # corresponding future measurement in (1).
+    ix1 = ixmap[daylist[match]].astype('i')
+    ix2 = ixmap[(daylist + dt)[match]].astype('i')
+    return ix1, ix2
+
+def lag_correlate(t, dt, x, method='Pearson'):
+    ix1, ix2 = lag_indices(t, dt)
+    N = ix1.size
+    if method == 'Pearson':
+        r, p = scipy.stats.pearsonr(x[ix1], x[ix2])
+    elif method == 'Spearman':
+        r, p = scipy.stats.spearmanr(x[ix1], x[ix2])
+    else:
+        raise Exception("Unknown method '%s'" % method)
+    return r, p, N
+
+def uneven_acf(t, x, Ndays=None, method='Pearson', lags=None):
+    if lags is None and Ndays is not None:
+        lags = np.arange(Ndays, dtype='i') + 1
+    coeffs = np.zeros(lags.size)
+    matches = np.zeros(lags.size)
+    for i, lag in enumerate(lags):
+        r, p, N = lag_correlate(t, lag, x, method=method)
+        coeffs[i] = r
+        matches[i] = N
+    return lags, coeffs, matches
+
+def plot_lag_correlation(t, dt, x):
+    ix1, ix2 = lag_indices(t, dt)
+    N = ix1.size
+    Pr, p = scipy.stats.pearsonr(x[ix1], x[ix2])
+    Sr, p = scipy.stats.spearmanr(x[ix1], x[ix2])
+
+    plt.figure()
+    plt.plot(x[ix1], x[ix2], 'ko')
+    plt.xlabel("Day i")
+    plt.ylabel("Day i + %i" % dt)
+    plt.title("%i-day correlation (N=%i, Pr=%0.3f, Sr=%0.3f)" % (dt, N, Pr, Sr))
+
+def plot_uneven_acf(t, x, Ndays=None, method='Pearson', lags=None,
+                    title=None, unit='d', peak=True, minpeak=0., smooth=False, fullrange=False):
+    lags, coeffs, matches = uneven_acf(t, x, Ndays, method, lags)
+    if smooth:
+        smoothed = boxsmooth(coeffs, smooth)
+        minsmooth = (smooth - 1)/2 + 1
+    if peak:
+        if smooth: x = smoothed
+        else:      x = coeffs
+        acf_peaks = peaks(lags, x)
+        if smooth and minpeak < minsmooth:
+            minpeak = minsmooth
+        acf_peaks = acf_peaks[acf_peaks >= minpeak]
+    if unit == 'yr':
+        xscale = 365.25
+        xlabel = "Lag [yr]"
+    else:
+        xscale = 1.
+        xlabel = "Lag [d]"
+    plt.figure(figsize=(10,6))
+    plt.subplot(2,1,1)
+    plt.plot(lags/xscale, matches, 'ko')
+    plt.xlabel(xlabel)
+    plt.ylabel("Matches")
+    if title is not None:
+        plt.title(title)
+    plt.subplot(2,1,2)
+    plt.plot(lags/xscale, coeffs, 'ko-')
+    #plt.axhline(0, color='k')
+    if fullrange:
+        plt.ylim(-1,+1)
+    if smooth:
+        plt.plot(lags/xscale, smoothed, 'r-')
+    if peak:
+        plt.axvline(acf_peaks[0]/xscale, color='r')
+        ax = plt.gca()
+        trans = mpl.transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        plt.text(acf_peaks[0]/xscale + 1, 0.9, "%0.1f" % (acf_peaks[0]/xscale), color='r', transform=trans)
+    plt.xlabel(xlabel)
+    plt.ylabel("Correlation Coeff")
+    return lags, coeffs, matches
+
+def append(t1, x1, t2, x2):
+    t3 = np.append(t1.decimalyear, t2.decimalyear)
+    t3 = astropy.time.Time(t3, format='decimalyear')
+    x3 = np.append(x1, x2)
+    ixsort = np.argsort(t3.decimalyear)
+    return t3[ixsort], x3[ixsort]
