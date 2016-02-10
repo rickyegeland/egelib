@@ -12,27 +12,42 @@ def noyes84_logRpHK(S, BmV):
     logRp_HK = np.log10(Rp_HK)
     return logRp_HK
 
+def noyes84_logRpHK_to_S(logRpHK, BmV):
+    """Return Mount Wilson S-index given logRpHK and color index
+
+    Ref: Noyes et al. 1984
+    """
+    logC_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
+    logR_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
+    Rp_HK = 10**logRpHK
+    R_HK = Rp_HK + 10**logR_phot
+    S = R_HK/(1.340E-4 * 10**logC_cf)
+    return S
+
 def noyes84_logRpHK_error(S, e_S, BmV, e_BmV):
     """Uncertainty in logRpHK"""
-    # Note: uncertainty dominated by e_BmV; very insensitive to S
     ln10 = np.log(10)
-    e_logC_cf = np.abs(3*1.13*BmV**2 - 2*3.91*BmV + 2.84) * e_BmV
-    logC_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
-    e_C_cf = np.abs(logC_cf * ln10 * e_logC_cf)
-    C_cf = 10 **logC_cf
-    e_R_HK = 1.340E-4 * np.sqrt(C_cf**2 * e_C_cf**2 + S**2 * e_S**2)
-    e_logR_phot = np.abs(2 * 1.918 * BmV - 3 * 2.893 * BmV**2 ) * e_BmV
+    var_BmV = e_BmV**2
+    var_S = e_S**2
+    # variance in 10**logC
+    logC = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
+    var_logC = (1.13 * 3 * BmV**2 - 3.91 * 2 * BmV + 2.84 )**2 * var_BmV
+    var_10logC = (10**logC * ln10)**2 * var_logC
+    # variance R_HK
+    a = 1.340E-4
+    R_HK = a * 10**logC * S
+    var_R_HK = (a * S)**2 * var_10logC + (a * 10**logC)**2 * var_S
+    # variance 10**logRphot
     logR_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
-    print "XXX: logR_phot=%f e_logR_phot=%f" % (logR_phot, e_logR_phot)
-    e_R_phot = np.abs(logR_phot * ln10 * e_logR_phot)
-    e_Rp_HK = np.sqrt(e_R_HK**2 + e_R_phot**2)
-    print "XXX: e_R_HK=%f e_R_phot=%f e_Rp_HK=%f" % (e_R_HK, e_R_phot, e_Rp_HK)
-    R_HK = 1.340E-4 * 10**logC_cf * S
-    Rp_HK = R_HK - 10**logR_phot
-    logRp_HK = np.log10(Rp_HK)
-    print "XXX: Rp_HK=%f logRp_HK=%f" % (Rp_HK, logRp_HK)
-    e_logRp_HK = np.abs(e_Rp_HK / (Rp_HK * ln10))
-    return e_logRp_HK
+    var_logR_phot = (1.918 * 2 * BmV - 2.893 * 3 * BmV**2)**2 * var_BmV
+    var_10logR_phot = (10**logR_phot * ln10)**2 * var_logR_phot
+    # variance RpHK
+    RpHK = R_HK - 10**logR_phot
+    var_RpHK = var_R_HK + var_10logR_phot
+    # variance logRpHK
+    var_logRpHK = (RpHK * ln10) ** -2 * var_RpHK
+    # result as standard deviation
+    return np.sqrt(var_logRpHK)
 
 def noyes84_tau_c(BmV):
     """Return tau_c, the turbulent convective turnover time [days]
