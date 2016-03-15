@@ -81,7 +81,7 @@ def critical_periods(t, unit='yr'):
              'nyquist_eq' : 1.0/f_nyquist_eq,
              'nyquist_med' : 1.0/f_nyquist_med }
 
-def find_coincident(t1, t2, dt, unit='d'):
+def find_coincident(t1, t2, dt, unit='d', unique=True):
     """
     Find coincident samples within dt between two time axes
     """
@@ -100,6 +100,10 @@ def find_coincident(t1, t2, dt, unit='d'):
         t = t1[i]
         distances = np.abs(t2 - t)
         coincident = np.where(distances <= dt)[0]
+        if unique:
+            # take only the closest coincident point
+            sort_ixs = np.argsort(distances[coincident])
+            coincident = coincident[sort_ixs][0:1]
         for j in coincident:
             t1_result.append(i)
             t2_result.append(j)
