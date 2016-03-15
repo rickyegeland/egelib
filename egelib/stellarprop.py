@@ -142,3 +142,27 @@ def omega_sun_snodgrass90(lat):
     Reference: Snodgrass and Ulrich 1990, ApJ
     """
     return differential_rotation(lat, 14.71, -2.39, -1.78)
+
+def hall95_StoFlux(S, BmV, Teff=None):
+    # Hall 1995 equation 8; Middelkoop 1982
+    log_Ccf = -0.47 + 2.84 * BmV - 3.91 * BmV**2 + 1.13 * BmV**3
+    Ccf = 10**log_Ccf
+    if Teff is None:
+        # Hall 1995 equation 11; Lang 1991
+        logTeff = 3.923 - 0.247*BmV
+        Teff = 10**logTeff
+    # Hall 1995 equation 12; Middelkoop 1982
+    F_HK = S * Ccf * Teff**4 * 1e-14
+    return F_HK
+    
+def hall95_fluxToS(F_HK, BmV, Teff=None):
+    # Hall 1995 equation 8; Middelkoop 1982
+    log_Ccf = -0.47 + 2.84 * BmV - 3.91 * BmV**2 + 1.13 * BmV**3
+    Ccf = 10**log_Ccf
+    if Teff is None:
+        # Hall 1995 equation 11; Lang 1991
+        logTeff = 3.923 - 0.247*BmV
+        Teff = 10**logTeff
+    # Inverse of Hall 1995 equation 12; Middelkoop 1982
+    S = F_HK / (Ccf * Teff**4 * 1e-14)
+    return S
