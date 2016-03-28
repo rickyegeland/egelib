@@ -5,7 +5,14 @@ def noyes84_logRpHK(S, BmV):
 
     Ref: Noyes et al. 1984
     """
+    S = np.asarray(S)
+    BmV = np.asarray(BmV)
     logC_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
+    DlogC_cf = np.zeros_like(BmV) # for correction of "nonphysical maximum"
+    x = (0.63 - BmV)
+    sel = BmV < 0.63
+    DlogC_cf[sel] = 0.135*x[sel] - 0.814*x[sel]**2 + 6.03*x[sel]**3
+    logC_cf += DlogC_cf
     R_HK = 1.340E-4 * 10**logC_cf * S
     logR_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
     Rp_HK = R_HK - 10**logR_phot
@@ -17,7 +24,14 @@ def noyes84_logRpHK_to_S(logRpHK, BmV):
 
     Ref: Noyes et al. 1984
     """
+    logRpHK = np.asarray(logRpHK)
+    BmV = np.asarray(BmV)
     logC_cf = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
+    DlogC_cf = np.zeros_like(BmV) # for correction of "nonphysical maximum"
+    x = (0.63 - BmV)
+    sel = BmV < 0.63
+    DlogC_cf[sel] = 0.135*x[sel] - 0.814*x[sel]**2 + 6.03*x[sel]**3
+    logC_cf += DlogC_cf
     logR_phot = -4.898 + 1.918 * BmV**2 - 2.893 * BmV**3
     Rp_HK = 10**logRpHK
     R_HK = Rp_HK + 10**logR_phot
@@ -30,6 +44,7 @@ def noyes84_logRpHK_error(S, e_S, BmV, e_BmV):
     var_BmV = e_BmV**2
     var_S = e_S**2
     # variance in 10**logC
+    # warning: ignores DlogC_cf correction
     logC = 1.13 * BmV**3 - 3.91 * BmV**2 + 2.84 * BmV - 0.47
     var_logC = (1.13 * 3 * BmV**2 - 3.91 * 2 * BmV + 2.84 )**2 * var_BmV
     var_10logC = (10**logC * ln10)**2 * var_logC
@@ -53,6 +68,7 @@ def noyes84_tau_c(BmV):
     """Return tau_c, the turbulent convective turnover time [days]
 
     Ref: Noyes et al. 1984"""
+    BmV = np.asarray(BmV)
     log_tau_c = np.zeros_like(BmV)
     x = 1 - BmV
     sel = x > 0
@@ -92,10 +108,12 @@ def saar99_tau_c_E(BmV):
 
     Ref: Saar & Brandenburg 1999
     """
-    if BmV < 1:
-        tau_c = -3.3300 + 15.382*BmV - 20.063*BmV**2 + 12.540*BmV**3 - 3.1466*BmV**4
-    else:
-        tau_c = 25.
+    BmV = np.asarray(BmV)
+    tau_c = np.zeros_like(BmV)
+    sel = BmV < 1
+    notsel = np.logical_not(sel)
+    tau_c[sel] = -3.3300 + 15.382*BmV[sel] - 20.063*BmV[sel]**2 + 12.540*BmV[sel]**3 - 3.1466*BmV[sel]**4
+    tau_c[notsel] = 25.
     return tau_c
 
 def saar99_rossby_empirical(P, BmV):
@@ -107,8 +125,8 @@ def saar99_rossby_empirical(P, BmV):
     return P/(4.*np.pi*tau_c)
 
 # Barnes 2007; altered Skumanich
-def t_gyro_barnes(P, BV, n=0.5189, a=0.7725, b=0.601):
-    logt = (1./n) * (np.log10(P) - np.log10(a) - b * np.log10(BV - 0.4))
+def t_gyro_barnes(P, BmV, n=0.5189, a=0.7725, b=0.601):
+    logt = (1./n) * (np.log10(P) - np.log10(a) - b * np.log10(BmV - 0.4))
     return 10 ** logt # Myr
 
 def t_chromo_duncan(RpHK, a=10.725, b=-1.334, c=0.4085, d=-0.0522):
