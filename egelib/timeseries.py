@@ -5,6 +5,7 @@ import scipy.signal
 import scipy.optimize
 import astropy.time
 import timeit
+import egelib.stats
 
 # TODO: move plotting functions somewhere else
 
@@ -213,7 +214,7 @@ def plot_edges(t, y, label):
     plt.title('%s Season Edges' % label)
     plt.margins(0.05)
 
-def season_indices(t, edges=None):
+def season_indices(t, edges=None, hard=False):
     """
     Return indice array for which maps time sample to a season
 
@@ -230,9 +231,14 @@ def season_indices(t, edges=None):
     for ix in np.unique(season_ixs):
         season_members = np.arange(N)[season_ixs == ix] # bool array to index array
         seasons.append(season_members)
+    if hard:
+        if t[seasons[0]].jyear.max() < edges[0].jyear:
+            seasons = seasons[1:]
+        if t[seasons[-1]].jyear.min() > edges[-1].jyear:
+            seasons = seasons[:-1]
     return seasons
 
-def seasonal_series(t, y, edges=None):
+def seasonal_series(t, y, edges=None, hard=False):
     """
     Return array of time series for each season.
     
@@ -241,7 +247,7 @@ def seasonal_series(t, y, edges=None):
     >>> for i in range(len(ts)):
     >>>     print "Season %i has time samples %s and data %s" % (i, ts[i], ys[i])
     """
-    season_ixs = season_indices(t, edges=edges)
+    season_ixs = season_indices(t, edges=edges, hard=hard)
     ts = []
     ys = []
     for season in season_ixs:
@@ -249,7 +255,7 @@ def seasonal_series(t, y, edges=None):
         ys.append(y[season])
     return ts, ys
 
-def seasonal_means(t, y, edges=None):
+def seasonal_means(t, y, edges=None, hard=False):
     """
     Calculate seasonal means for some timeseries data
     
@@ -263,7 +269,7 @@ def seasonal_means(t, y, edges=None):
      - <numpy.ndarray>       : standard deviation of y in each season
      - <numpy.ndarray>       : count of measurements in each season
     """
-    ts, ys = seasonal_series(t, y, edges=edges)
+    ts, ys = seasonal_series(t, y, edges=edges, hard=hard)
     t_means = [t.jyear.mean() for t in ts]
     t_means = astropy.time.Time(t_means, format='jyear', scale=t.scale)
     y_means = np.array([y.mean() for y in ys])
@@ -289,6 +295,36 @@ def seasonal_calc(t, y, func, edges=None):
     t_means = astropy.time.Time(t_means, format='jyear', scale=t.scale)
     f_y = np.array([func(y) for y in ys])
     return t_means, f_y
+
+def seasonal_mad_outliers(t, x, edges=None, seasons=None, bool=False, Nseas=10, Nsigma=4):
+    out_ixs = []
+    if seasons is None and edges is None:
+        edges = season_edges(t)
+        seasons = season_indices(t, edges=edges)
+    elif seasons is None and edges is not None:
+        seasons = season_indices(t, edges=edges)
+
+    # madf = lambda x: np.median(np.abs(x - np.median(x)))
+#     mad = []
+#     for s in enumerate(seasons):
+#         if len(s) > Nseas:
+#             mad.append(madf(x[s]))
+#     medmad = np.median(mad)
+    for iseas, s in enumerate(seasons):
+        if len(s) == 0: continue
+        xs = x[s]
+        out = egelib.stats.mad_outliers(xs, Nsigma=Nsigma)
+        #out = np.abs(xs - np.median(xs)) > Nsigma*1.483*medmad # bool array
+        sout = s[out]
+        out_ixs.extend(sout)
+    out_ixs = np.unique(np.array(out_ixs))
+    if bool is True:
+        out = np.zeros(len(t), dtype='bool')
+        if out_ixs.size > 0:
+            out[out_ixs] = True
+        return out
+    else:
+        return out_ixs
 
 def sigmanorm(y):
     """Rescale data to units of its standard deviation"""
@@ -491,7 +527,7 @@ def peaks_mc(t, y, e, thresh=0, N_trials=5000, N_peaks=None, **pgram_kwargs):
     def do_trial(**kwargs):
         y_jig = np.random.normal(y, e)
         periods, power = lombscargle(t, y_jig, **kwargs)
-        peaks = find_peaks(power, thresh=thresh)
+        peaks = peak_indices(power, thresh=thresh)
         pk_periods = periods[peaks]
         pk_power = power[peaks]
         if N_peaks is not None and pk_periods.size >= N_peaks:
@@ -566,6 +602,15 @@ def FAP_threshold(sig, Ni):
 def FAP_sig(z, Ni):
     """Given a pgram power, return the significance level"""
     return 1 - FAP_model(z, Ni)
+
+def horne1986_Ni(N):
+    """Given the number of samples, empirically estimate Ni independent frequencies"""
+    return -6.362 + 1.193*N + 0.00098*N**2
+
+def horne1986_FAP_threshold(sig, N):
+    """Given the number of samples, empirically estimate significance threhsold"""
+    Ni = horne1986_Ni(N)
+    return FAP_threshold(sig, Ni)
 
 #
 # Sine models
@@ -645,7 +690,7 @@ def lowpass_model(t, y, lowthresh=10.0, sigthresh=10.0, max_iter=3, Pres=1000., 
     newP = np.arange(lowthresh, duration(t, 'yr'), lowthresh/Pres)
     for i in range(max_iter):
         newP, power = pgram(t, y_hipass, periods=newP)
-        pk_ixs = find_peaks(power, thresh=sigthresh)
+        pk_ixs = peak_indices(power, thresh=sigthresh)
         if pk_ixs.size == 0:
             break
         peaks = np.sort(newP[pk_ixs])[::-1]
@@ -744,7 +789,7 @@ def STLS():
         ax2 = plt.subplot(1,2,2)
         periods, power = pgram(t_win, S_win, periods=periods)
         Pmatrix[ix] = power
-        peaks = find_peaks(power)
+        peaks = peak_indices(power)
         if peaks.size > 0:
             pk_period = periods[peaks][0]
             pk_power = power[peaks][0]
@@ -802,7 +847,7 @@ def plot_STLS(stls_result):
     peaks1 = []
     peaks2 = []
     for ix in range(Pmatrix.shape[0]):
-        pk_ixs = find_peaks(Pmatrix[ix], z_thresh[ix])
+        pk_ixs = peak_indices(Pmatrix[ix], z_thresh[ix])
         pks = periods[pk_ixs]
         t = tcenter[ix]
         #print "ix=%i t=%0.1f pks=%s" % (ix, t, pks)
@@ -1000,6 +1045,18 @@ def boxsmooth(x, len, keepends=True):
         smoothed = xs
     return smoothed
 
+def running_func(f, t, x, w, lims=None):
+    """Compute a function over a window for each day in a time segment"""
+    if lims is None:
+        lims = np.floor((t.jd.min() + w, t.jd.max() - w))
+    t_func = np.arange(lims[0], lims[1], dtype='i')
+    x_func = np.zeros_like(t_func, dtype='f')
+    for i, jd in enumerate(t_func):
+        sel = (t.jd >= (jd - w)) & (t.jd <= (jd + w))
+        x_func[i] = f(x[sel])
+    t_func = astropy.time.Time(t_func, format='jd')
+    return t_func, x_func
+
 def decimal_hour(t):
     """Return the hour of the day for every time in t"""
     datetime = t.datetime
@@ -1121,9 +1178,13 @@ def plot_uneven_acf(t, x, Ndays=None, method='Pearson', lags=None,
     plt.ylabel("Correlation Coeff")
     return lags, coeffs, matches
 
-def append(t1, x1, t2, x2):
+def append(t1, x1, t2, x2, e1=None, e2=None):
     t3 = np.append(t1.decimalyear, t2.decimalyear)
     t3 = astropy.time.Time(t3, format='decimalyear')
     x3 = np.append(x1, x2)
     ixsort = np.argsort(t3.decimalyear)
-    return t3[ixsort], x3[ixsort]
+    if e1 is None:
+        return t3[ixsort], x3[ixsort]
+    else:
+        e3 = np.append(e1, e2)
+        return t3[ixsort], x3[ixsort], e3[ixsort]
