@@ -24,6 +24,14 @@ def bin_equalN(x, Ninbin, sorted=False):
         bins[i+1] = (x[ixbins[i]] + x[ixbins[i] - 1])/2
     return bins
 
+def mad(x):
+    """Median absolute deviation"""
+    return np.median(np.abs(x - np.median(x)))
+
+def mad_sigma(x):
+    """Median absolute deviation scaled to 1-sigma in case of Gaussian distribution """
+    return 1.483 * mad(x)
+
 def mad_outliers(x, bool=False, Nsigma=4):
     """Identify outliers using the median absolute deviation
 
@@ -33,8 +41,8 @@ def mad_outliers(x, bool=False, Nsigma=4):
     convenience.
     """
     med = np.median(x)
-    mad = np.median(np.abs(x - med))
-    out = np.abs(x - med) > Nsigma*1.483*mad # bool array
+    mad_std = mad_sigma(x)
+    out = np.abs(x - med) > Nsigma * mad_std # bool array
     if bool is False:
         out = np.arange(x.size)[out] # index array
     return out
