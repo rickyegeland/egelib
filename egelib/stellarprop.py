@@ -184,3 +184,36 @@ def hall95_fluxToS(F_HK, BmV, Teff=None):
     # Inverse of Hall 1995 equation 12; Middelkoop 1982
     S = F_HK / (Ccf * Teff**4 * 1e-14)
     return S
+
+def hall1996_flux_cont_HK_bmy(bmy):
+    # Hall 1996 Table 4
+    if bmy >= -0.1 and bmy <= 0.41:
+        logF = 8.179 - 2.887 * bmy
+    elif bmy > 0.41 and bmy <= 0.8:
+        logF = 8.906 - 4.657 * bmy
+    else:
+        raise Exception("b-y out of range")
+    return 10**logF
+
+def rutten1984_Ccf(BmV):
+    # Rutten, R. G. M. 1984, A&A, 130, 353
+    # Used in Hall, Lockwood, & Skiff 2007 (eq 5)
+    logCcf = 0.25 * BmV**3 - 1.33 * BmV**2 + 0.43 * BmV + 0.24
+    return 10**logCcf
+
+def hall2007_S_relscale(bmy_A, BmV_A, Teff_A, K_A, bmy_B, BmV_B, Teff_B, K_B, factors=False):
+    # Returns S_A/S_B: i.e., the relative scaling factor to convert S 
+    #computed with B parameters to S computed with A parameters
+    F_cont_A = hall1996_flux_cont_HK_bmy(bmy_A)
+    F_cont_B = hall1996_flux_cont_HK_bmy(bmy_B)
+    flux_factor = F_cont_A / F_cont_B
+    Ccf_A = rutten1984_Ccf(BmV_A)
+    Ccf_B = rutten1984_Ccf(BmV_B)
+    Ccf_factor = Ccf_B / Ccf_A
+    Teff_factor = (Teff_B / Teff_A)**4
+    K_factor = K_B / K_A
+    S_factor = flux_factor * Ccf_factor * Teff_factor * K_factor
+    if factors:
+        return (S_factor, flux_factor, Ccf_factor, Teff_factor, K_factor)
+    else:
+        return S_factor
