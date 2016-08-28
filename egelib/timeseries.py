@@ -326,6 +326,16 @@ def seasonal_mad_outliers(t, x, edges=None, seasons=None, bool=False, Nseas=10, 
     else:
         return out_ixs
 
+def mad_outliers(t, x, w, bool=False, Nsigma=4):
+    """Identify outliers using the median absolute deviation"""
+    x_med = local_func(np.median, t, x, w)
+    x_mad = local_func(egelib.stats.mad_sigma, t, x, w)
+    out = np.abs(x - x_med) >= Nsigma * x_mad
+    if bool is True:
+        return out
+    else:
+        return np.arange(len(out))[out] # bool to index
+
 def sigmanorm(y):
     """Rescale data to units of its standard deviation"""
     y = y.copy()
@@ -1045,6 +1055,14 @@ def boxsmooth(x, len, keepends=True):
         smoothed = xs
     return smoothed
 
+def local_func(f, t, x, w):
+    """Compute a function over a window for each datum in a time series"""
+    x_func = np.zeros_like(t, dtype='f')
+    for i, jd in enumerate(t.jd):
+        sel = (t.jd >= (jd - w)) & (t.jd <= (jd + w))
+        x_func[i] = f(x[sel])
+    return x_func
+
 def running_func(f, t, x, w, lims=None):
     """Compute a function over a window for each day in a time segment"""
     if lims is None:
@@ -1053,7 +1071,10 @@ def running_func(f, t, x, w, lims=None):
     x_func = np.zeros_like(t_func, dtype='f')
     for i, jd in enumerate(t_func):
         sel = (t.jd >= (jd - w)) & (t.jd <= (jd + w))
-        x_func[i] = f(x[sel])
+        if np.sum(sel) == 0:
+            x_func[i] = np.nan
+        else:
+            x_func[i] = f(x[sel])
     t_func = astropy.time.Time(t_func, format='jd')
     return t_func, x_func
 
