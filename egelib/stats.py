@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.stats
 
 def printstats(x, label, precision=3):
     """Print basic statistics about a 1D array"""
@@ -46,3 +47,40 @@ def mad_outliers(x, bool=False, Nsigma=4):
     if bool is False:
         out = np.arange(x.size)[out] # index array
     return out
+
+def ols_alpha(beta, x_mean, y_mean):
+    # OLS-bisector: Isobe et al. 1990
+    return y_mean - beta * x_mean
+
+def ols_bisector_beta(beta1, beta2):
+    beta3 = (beta1*beta2 - 1. + np.sqrt((1. + beta1**2)*(1. + beta2**2)))/(beta1 + beta2)
+    return beta3
+
+def ols_bisector_params(beta1, beta2, x_mean, y_mean):
+    beta3 = ols_bisector_beta(beta1, beta2)
+    alpha3 = ols_alpha(beta3, x_mean, y_mean)
+    return [beta3, alpha3]
+
+def ols_bisector(x, y):
+    params1 = scipy.stats.linregress(x, y)
+    params2 = scipy.stats.linregress(y, x)
+    params2i = [1./params2[0], -params2[1]/params2[0]]
+    return ols_bisector_params(params1[0], params2i[0], np.mean(x), np.mean(y))
+
+def ols_bisector_werrs_beta(x, y, e_x, e_y):
+    # Feigelson & Babu 1992 equations 1-6, but see erratum
+    e_ratio = (e_y/e_x)**2
+    ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0)
+    S_diff = (Syy - e_ratio*Sxx)
+    beta = (S_diff + np.sqrt(S_diff**2 + 4*e_ratio*Sxy**2))/(2*Sxy)
+    n = x.size
+    R = np.sum((y - y.mean() - beta*(x - x.mean()))**2)/(n-2)
+    var_B = (beta/Sxy)**2 * (R*Sxy/beta + R**2*(n-2)*(e_ratio+beta**2/(n-1))/ \
+                             ((n-1)*(e_ratio + beta**2)**2))
+    e_beta = np.sqrt(var_B)
+    return beta, e_beta
+
+def ols_bisector_werrs(x, y, e_x, e_y):
+    beta, e_beta = ols_werrs_beta(x, y, e_x, e_y)
+    alpha = ols_alpha(beta, np.mean(x), np.mean(y))
+    return ((beta, alpha), e_beta)
