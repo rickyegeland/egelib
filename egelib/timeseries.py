@@ -296,7 +296,7 @@ def seasonal_calc(t, y, func, edges=None):
     f_y = np.array([func(y) for y in ys])
     return t_means, f_y
 
-def seasonal_mad_outliers(t, x, edges=None, seasons=None, bool=False, Nseas=10, Nsigma=4):
+def seasonal_mad_outliers(t, x, edges=None, seasons=None, bool=False, global_mad=True, Nseas=10, Nsigma=4):
     out_ixs = []
     if seasons is None and edges is None:
         edges = season_edges(t)
@@ -304,19 +304,29 @@ def seasonal_mad_outliers(t, x, edges=None, seasons=None, bool=False, Nseas=10, 
     elif seasons is None and edges is not None:
         seasons = season_indices(t, edges=edges)
 
-    # madf = lambda x: np.median(np.abs(x - np.median(x)))
-#     mad = []
-#     for s in enumerate(seasons):
-#         if len(s) > Nseas:
-#             mad.append(madf(x[s]))
-#     medmad = np.median(mad)
-    for iseas, s in enumerate(seasons):
-        if len(s) == 0: continue
-        xs = x[s]
-        out = egelib.stats.mad_outliers(xs, Nsigma=Nsigma)
-        #out = np.abs(xs - np.median(xs)) > Nsigma*1.483*medmad # bool array
-        sout = s[out]
-        out_ixs.extend(sout)
+    if global_mad:
+        # Global seasonal threshold
+        mads = []
+        for iseas, s in enumerate(seasons):
+            if len(s) == 0 or len(s) < Nseas: continue
+            xs = x[s]
+            mads.append(egelib.stats.mad_sigma(xs))
+        medmad = np.median(mads)
+        for iseas, s in enumerate(seasons):
+            if len(s) == 0: continue
+            xs = x[s]
+            med = np.median(xs)
+            out = np.abs(xs - med) > Nsigma * medmad
+            sout = s[out]
+            out_ixs.extend(sout)
+        else:
+            # Local seasonal threshold
+            for iseas, s in enumerate(seasons):
+                if len(s) == 0 or len(s) < Nseas: continue
+                xs = x[s]
+                out = egelib.stats.mad_outliers(xs, Nsigma=Nsigma)
+                sout = s[out]
+                out_ixs.extend(sout)
     out_ixs = np.unique(np.array(out_ixs))
     if bool is True:
         out = np.zeros(len(t), dtype='bool')
