@@ -319,14 +319,14 @@ def seasonal_mad_outliers(t, x, edges=None, seasons=None, bool=False, global_mad
             out = np.abs(xs - med) > Nsigma * medmad
             sout = s[out]
             out_ixs.extend(sout)
-        else:
-            # Local seasonal threshold
-            for iseas, s in enumerate(seasons):
-                if len(s) == 0 or len(s) < Nseas: continue
-                xs = x[s]
-                out = egelib.stats.mad_outliers(xs, Nsigma=Nsigma)
-                sout = s[out]
-                out_ixs.extend(sout)
+    else:
+        # Local seasonal threshold
+        for iseas, s in enumerate(seasons):
+            if len(s) == 0 or len(s) < Nseas: continue
+            xs = x[s]
+            out = egelib.stats.mad_outliers(xs, Nsigma=Nsigma)
+            sout = s[out]
+            out_ixs.extend(sout)
     out_ixs = np.unique(np.array(out_ixs))
     if bool is True:
         out = np.zeros(len(t), dtype='bool')
@@ -1210,10 +1210,24 @@ def plot_uneven_acf(t, x, Ndays=None, method='Pearson', lags=None,
     return lags, coeffs, matches
 
 def append(t1, x1, t2, x2, e1=None, e2=None):
-    t3 = np.append(t1.decimalyear, t2.decimalyear)
-    t3 = astropy.time.Time(t3, format='decimalyear')
+    # t.decimalyear fails if array is zero length
+    if t1.size == 0:
+        t1decyr = []
+    else:
+        t1decyr = t1.decimalyear
+    if t2.size == 0:
+        t2decyr = []
+    else:
+        t2decyr = t2.decimalyear
+    t3 = np.append(t1decyr, t2decyr)
+    ixsort = np.argsort(t3)
+    if t3.size == 0:
+        # unable to init zero-length array like Time([], format='decimalyear')
+        # this reuses given zero-length array
+        t3 = t1
+    else:
+        t3 = astropy.time.Time(t3, format='decimalyear')
     x3 = np.append(x1, x2)
-    ixsort = np.argsort(t3.decimalyear)
     if e1 is None:
         return t3[ixsort], x3[ixsort]
     else:
