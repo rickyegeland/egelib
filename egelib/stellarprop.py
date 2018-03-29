@@ -11,6 +11,7 @@ TSUN = 5772. # K
 RSUN = 6.957e8 # m
 MBOL_SUN = -2.5 * np.log10(LSUN/L0)
 GMSUN = 1.3271244e20 # m^3 s^-2
+AU = 149597870700. # m, IAU Resolution 1 (1976)
 
 def noyes84_logRpHK(S, BmV):
     """Return R prime HK, the color-corrected activity index
@@ -96,6 +97,14 @@ def noyes84_rossby(P, BmV):
     tau_c = noyes84_tau_c(BmV)
     return P/tau_c
 
+def noyes84_rossby_activity(logRpHk):
+    """Return the Rossby number given the activity
+    
+    Ref: Noyes et al. 1984 eq (3)"""
+    y = 5 + logRpHK
+    logRo = 0.324 - 0.400*y - 0.283 * y**2 - 1.325 * y**3
+    return 10**logRo
+
 def bv2teff_noyes84(BmV):
     """Rough conversion from B-V to T_eff
 
@@ -157,6 +166,32 @@ def t_chromo_soderblom(logRpHK, a=-1.50, b=2.25):
 # Guinan & __ 2008 Fig 1
 def t_gyro_guinan(P, y0=1.865, a=-2.854, b=0.08254):
     return ( -(np.log10(P) + y0) / a )**(1./b)
+
+def mamajek08_logRpHK(Ro):
+    """Activity logR'_HK as a function of Rossby number
+
+    Ref: Mamajek et al. 2008 equations (6) and (8)
+    Note: Ro is from Noyes et al. 1984 (see noyes84_rossby())
+          valid only for -5.0 < logRpHK < -4.3
+    """
+    # TODO: uncertainties!
+    if Ro < 0.4: # very active: equation (8)
+        return -4.23 - 1.451 * (Ro - 0.233)
+    elif (Ro >= 0.4) and (Ro < 2.2): # "normal" activity: equaiton (6)
+        return -4.522 - 0.337 * (Ro - 0.814)
+    else: # Ro >= 2.2 is undefined
+        return np.nan
+
+def act_age_mamajek08(t):
+    """Activity logR'_HK as a function of age
+
+    Ref: Mamajek et al. 2008 equation (4)
+    Note: valid for log(R'_HK) in [-4.0,-5.1] and log(t) in [6.7,9.9]
+    """
+    # TODO: uncertainties!
+    logt = np.log10(t)
+    logRpHK = 8.94 - 4.849 * logt + 0.624 * logt**2 - 0.028 * logt**3
+    return logRpHK
 
 def differential_rotation(lat, A, B, C):
     """Return standard differential rotation profile \Omega = A + B*sin(lat)**2 + C*sin(lat)**4
@@ -267,6 +302,10 @@ def flower1996_BC(Teff, e_Teff=0):
     e_BC = np.zeros_like(logT)
     for i in range(logT.size):
         t = logT[i]
+        if np.isnan(t):
+            BC[i] = np.nan
+            e_BC[i] = np.nan
+            continue
         params = flower1996_BC_params(t)
         BC_poly = np.polynomial.polynomial.Polynomial(params)
         BC[i] = BC_poly(t)
@@ -449,3 +488,13 @@ def inclination(vsini, R, Peq, e_vsini=0, e_R=0, e_Peq=0):
     else:
         sini = inclination_sini(vsini, R, Peq)
         return arcsin_lim(sini)
+
+def angular_diam(R, plx):
+    # R in Rsun units, plx in mas
+    mas2rad = 1000. / 3600. * np.pi / 180. # 1 rad / 1 mas
+    R_m = R * RSUN # meters
+    plx_rad = plx * mas2rad  # radians
+    d_AU = 0.5 * 1/plx_rad # AU
+    d_m = d_AU * AU # m
+    theta_rad = R_m / d_m # radians
+    return theta_rad / mas2rad # mas
