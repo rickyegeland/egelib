@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 import astropy
 import astroquery.simbad
@@ -110,8 +111,8 @@ def query_TLRM(obj):
     simbad = query_simbad(obj)
     try:
         gcs = query_gcs3(obj)
-    except Exception, e:
-        print "WARNING: query_gcs3() failed:", e
+    except Exception as e:
+        print("WARNING: query_gcs3() failed:", e)
         # Programing pitfall: updating the columns above will require
         # an update to these dtype specifications.
         gcs = nulltable([('HIP', '<i4'), ('b-y', '<f4'), ('m1', '<f4'), ('c1', '<f4'),
@@ -120,15 +121,15 @@ def query_TLRM(obj):
                          ('VMag', '<f4'), ('e_VMag', '<f4'), ('Vmag', '<f4')])
     try:
         med = query_feh_median(obj)
-    except Exception, e:
-        print "WARNING: query_feh_median() failed:", e
+    except Exception as e:
+        print("WARNING: query_feh_median() failed:", e)
         med = nulltable([('ID', 'S7'), ('Teff_med', '<f8'), ('Teff_madstd', '<f8'), ('Teff_N', '<i8'),
                          ('logg_med', '<f8'), ('logg_madstd', '<f8'), ('logg_N', '<i8'),
                          ('Fe_H_med', '<f8'), ('Fe_H_madstd', '<f8'), ('Fe_H_N', '<i8')])
     try:
         logg = query_logg(obj)
-    except Exception, e:
-        print "WARNING: query_logg() failed:", e
+    except Exception as e:
+        print("WARNING: query_logg() failed:", e)
         logg = nulltable([('INPUT', 'a8'), ('logg', 'f'), ('e_logg', 'f'), ('logg_ref', 'a19')])
     table = astropy.table.hstack([simbad, gcs, med, logg])
     # Fundemental Properties
@@ -149,16 +150,16 @@ def query_TLRM(obj):
 def query_TLRM_list(obj_list):
     tables = []
     for obj in obj_list:
-        print "===", obj
+        print("===", obj)
         try:
             table = query_TLRM(obj)
             Nrows = len(table)
             if Nrows > 1:
-                print "WARNING: %i rows from query; taking only first row" % Nrows
+                print("WARNING: %i rows from query; taking only first row" % Nrows)
                 table = table[0]
             tables.append(table)
-        except Exception, e:
-            print "ERROR:", e
+        except Exception as e:
+            print("ERROR:", e)
             # make empty table using the dtype of the previous table
             last = tables[-1] # XXX BUG: first query cannot be null
             tables.append(nulltable(last.dtype))

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -121,7 +122,7 @@ def overlap(t1, t2):
 
     # Ensure t1 min < t2 min
     if t2['min'] < t1['min']:
-        print 't2 starts earlier'
+        print('t2 starts earlier')
         t1, t2 = t2, t1
     
     # var names wrt t2
@@ -514,19 +515,19 @@ def lombscargle_mc(t, Ntrials, y=None, **kwargs):
     peak_amps = np.zeros(Ntrials)
     sum_y = np.zeros_like(t.jyear)
     sum_pgram = np.zeros_like(periods)
-    print "Starting %s monte carlo, %i trials of %i points to %i periods..." % \
-    (mode, Ntrials, t.jyear.size, periods.size)
-    print "Progress:",
+    print("Starting %s monte carlo, %i trials of %i points to %i periods..." % \
+    (mode, Ntrials, t.jyear.size, periods.size))
+    print("Progress:", end=' ')
     for i in range(Ntrials):
         if i > 0 and (i+1) % 1000 == 0:
-            print 'k',
+            print('k', end=' ')
         trial_y, periods, trial_pgram = do_trial(periods=periods)
         imax = np.argmax(trial_pgram)
         peak_periods[i]= periods[imax]
         peak_amps[i] = trial_pgram[imax]
         sum_y += trial_y
         sum_pgram += trial_pgram
-    print "...Done"
+    print("...Done")
     mean_y = sum_y / Ntrials
     mean_pgram = sum_pgram / Ntrials
     results = { 'mode' : mode,
@@ -564,9 +565,9 @@ def peaks_mc(t, y, e, thresh=0, N_trials=5000, N_peaks=None, **pgram_kwargs):
         mc_pk_periods = np.append(mc_pk_periods, pk_periods)
         mc_pk_power = np.append(mc_pk_power, pk_power)
     tend = timeit.time.clock()
-    print "trials=%i peaks=%i thresh=%0.3g" % (N_trials, mc_pk_periods.size, thresh)
-    print "%i trials of %i samples to %i periods in %f s" % \
-        (N_trials, y.size, periods.size, tend - tstart)
+    print("trials=%i peaks=%i thresh=%0.3g" % (N_trials, mc_pk_periods.size, thresh))
+    print("%i trials of %i samples to %i periods in %f s" % \
+        (N_trials, y.size, periods.size, tend - tstart))
     return mc_pk_periods, mc_pk_power
 
 def plot_mc(name, mc_results):
@@ -588,7 +589,7 @@ def plot_mc(name, mc_results):
 
     statdump(mc_results['peak_periods'], '%s periods [yr]' % name)
     statdump(mc_results['peak_amps'], '%s amps [power]' % name)
-    print "%s median of mean %s pgram: %0.3f" % (name, mode, np.median(mc_results['mean_pgram']))
+    print("%s median of mean %s pgram: %0.3f" % (name, mode, np.median(mc_results['mean_pgram'])))
 
 #
 # Lomb-Scargle False Alarm Probability
@@ -756,7 +757,7 @@ def STLS():
     minP = 1.1 # years
     maxP = Nseasons/2. # years
     periods = np.arange(minP, maxP, dP)
-    print "Period search: dP=%0.3f minP=%0.3f maxP=%0.3f N_P=%i" % (dP, minP, maxP, periods.size)
+    print("Period search: dP=%0.3f minP=%0.3f maxP=%0.3f N_P=%i" % (dP, minP, maxP, periods.size))
     
     plot_pgram(t, S, periods, title='Original')
     S_lowpass = sum_sines(t, lowpass_model_params) + S_all.mean()
@@ -774,12 +775,12 @@ def STLS():
     # Equal-interval least-squares params search
     lsq_periods = np.arange(minP, maxP, 0.1)
     lsq_matrix = np.zeros((Nwindows, lsq_periods.size, 4))
-    print "Equi-interval Phase search: n_periods=%i n_elem=%i" % (lsq_periods.size, lsq_matrix.size)
+    print("Equi-interval Phase search: n_periods=%i n_elem=%i" % (lsq_periods.size, lsq_matrix.size))
     
     # Significant peaks least-squares params search
     sigranks, sigpeaks = get_peak_range(minP, maxP)
     sig_lsq_matrix = np.zeros((Nwindows, sigpeaks.size, 4))
-    print "Sig-Peak Phase search: n_periods=%i n_elem=%i" % (sigpeaks.size, sig_lsq_matrix.size)
+    print("Sig-Peak Phase search: n_periods=%i n_elem=%i" % (sigpeaks.size, sig_lsq_matrix.size))
 
     for ix in range(0, len(edges) - Nseasons):
         # Time Series
@@ -793,7 +794,7 @@ def STLS():
         Npoints[ix] = N
         var[ix] = np.var(S_win)
         label = "%02i %0.1f N=%i var=%0.3g" % (ix, tcenter[ix], Npoints[ix], var[ix])
-        print label
+        print(label)
         
         # Time Series
         plt.figure(figsize=(9,2))
@@ -830,7 +831,7 @@ def STLS():
         thresh = 0.001
         sig = 1.0 - thresh
         z_thresh[ix] = FAP_threshold(sig, Ni)
-        print "FAP Ni=%0.3f thresh=%0.2g%% z_thresh=%0.3f z_est=%0.3f" % (Ni, thresh*100., z_thresh[ix], FAP_threshold(sig, N/2.))
+        print("FAP Ni=%0.3f thresh=%0.2g%% z_thresh=%0.3f z_est=%0.3f" % (Ni, thresh*100., z_thresh[ix], FAP_threshold(sig, N/2.)))
         plt.axhline(z_thresh[ix], color='r')
         
         # Peak phase, Amplitude
@@ -840,7 +841,7 @@ def STLS():
             y_sin = sinefunc(t_sin, pk_period, amp, phase, offset)
             ax1.plot(t_sin, y_sin + S_win.mean(), 'b-')
             pk_params[ix] = [pk_period, pk_power, amp, phase, offset]
-            print "peak amp phase offset:", pk_params[ix]
+            print("peak amp phase offset:", pk_params[ix])
             
         # Equi-Interval Least squares phase search
         for j, P in enumerate(lsq_periods):
@@ -852,7 +853,7 @@ def STLS():
             try:
                 amp, phase, offset = find_sine_params(t_win.jyear, S_win, P)
             except RuntimeError as e:
-                print "ERROR: least-squares fit for P=%0.3f failed:" % P, e
+                print("ERROR: least-squares fit for P=%0.3f failed:" % P, e)
                 sig_lsq_matrix[ix,j] = np.ones(4) * np.nan
                 continue
             sig_lsq_matrix[ix,j] = [P, amp, phase, offset]
@@ -898,7 +899,7 @@ def plot_STLS(stls_result):
     ax1 = plt.subplot(gs[3])
     
     Z = Pmatrix.transpose() / Npoints
-    print "Z min=%0.3g max=%0.3g" % (Z.min(), Z.max())
+    print("Z min=%0.3g max=%0.3g" % (Z.min(), Z.max()))
     cont = ax1.contourf(X, Y, Z, levels=np.linspace(0,Z.max(),Ncontlevels), cmap='gray')
     #ax1.contour(X, Y, Z, [z_thresh.mean()], colors=['c'], linestyles=[':'])
     
@@ -934,7 +935,7 @@ def plot_STLS(stls_result):
     
     # Integration Plot
     Zint = Z.sum(axis=1)/Z.shape[1]
-    print "Zint min=%0.3g max=%0.3g" % (Zint.min(), Zint.max())
+    print("Zint min=%0.3g max=%0.3g" % (Zint.min(), Zint.max()))
     ax2 = plt.subplot(gs[5], sharey=ax1)
     pos1 = ax2.get_position() # get the original position 
     pos2 = [pos1.x0 + 0.055, pos1.y0,  pos1.width/1.2, pos1.height] 

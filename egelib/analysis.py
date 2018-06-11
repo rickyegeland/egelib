@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -76,7 +77,7 @@ def search_rotations(t, x, e=None, label=None,
     N_seas = len(ts)
     
     periods = np.arange(minP, maxP, dP) / 365.25
-    print "dP=%0.3g N_P=%i" % (dP, periods.size)
+    print("dP=%0.3g N_P=%i" % (dP, periods.size))
     results = []
     t_rot = np.zeros(N_seas)
     P_rot = np.ones(N_seas) * np.nan
@@ -88,7 +89,7 @@ def search_rotations(t, x, e=None, label=None,
     else:
         label = "%s: Season %%i" % (label)
     for ix, t in enumerate(ts):
-        print "===", label % ix, "==="
+        print("===", label % ix, "===")
         t_rot[ix] = t.decimalyear.mean()
         x = xs[ix]
         if detrend:
@@ -97,7 +98,7 @@ def search_rotations(t, x, e=None, label=None,
         N = x.size
         
         if N < N_thresh:
-            print "skipping: N=%i < thresh=%i" % (N, N_thresh)
+            print("skipping: N=%i < thresh=%i" % (N, N_thresh))
             continue
 
         # Periodogram
@@ -129,8 +130,8 @@ def search_rotations(t, x, e=None, label=None,
                 z_thresh = z_est
             else:
                 raise Exception("sig_mode=%s not valid" % sig_mode)
-            print "FAP thresh=%0.2g%% Ni_mc=%0.1f Ni_est=%0.1f z_interp=%0.3f z_fit=%0.3f z_est=%0.3f sig_mode=%s" % \
-                (sig_thresh*100., Ni_mc, Ni_est, z_interp, z_fit, z_est, sig_mode)
+            print("FAP thresh=%0.2g%% Ni_mc=%0.1f Ni_est=%0.1f z_interp=%0.3f z_fit=%0.3f z_est=%0.3f sig_mode=%s" % \
+                (sig_thresh*100., Ni_mc, Ni_est, z_interp, z_fit, z_est, sig_mode))
         else:
             did_mc = False
             Ni_mc = None
@@ -176,13 +177,13 @@ def search_rotations(t, x, e=None, label=None,
 
         if peak_found:
             # Print peak period (FAP)
-            print "peaks: ",
+            print("peaks: ", end=' ')
             for i in range(peaks.size):
-                print "%0.3f d (%0.1e)" % (peak_period[i], peak_FAP[i]),
-                if ix < (peaks.size - 1): print ", ",
-            print
+                print("%0.3f d (%0.1e)" % (peak_period[i], peak_FAP[i]), end=' ')
+                if ix < (peaks.size - 1): print(", ", end=' ')
+            print()
         else:
-            print "No significant peaks"
+            print("No significant peaks")
 
         # Do not count pgrams with a very close secondary peak
         second_peak = False
@@ -190,8 +191,8 @@ def search_rotations(t, x, e=None, label=None,
             pk1_power = power[peaks_all][0]
             pk2_power = power[peaks_all][1]
             frac = pk2_power/pk1_power
-            print "Secondary peak check: p1=%0.3f p2=%0.3f frac=%0.3f thresh=%0.3f" % \
-                    (pk1_power, pk2_power, frac, sep_thresh)
+            print("Secondary peak check: p1=%0.3f p2=%0.3f frac=%0.3f thresh=%0.3f" % \
+                    (pk1_power, pk2_power, frac, sep_thresh))
             if frac > 1. - sep_thresh:
                 second_peak = True
         
@@ -218,7 +219,7 @@ def search_rotations(t, x, e=None, label=None,
             P_std = mc_periods.std() * 365.25
             pct = (P_std / P_mc) * 100.
             e_rot[ix] = P_std
-            print "Peak error: P=%0.4g P_mean=%0.4g P_std=%0.4g (%0.4g%%)" % (P_d, P_mc, P_std, pct)
+            print("Peak error: P=%0.4g P_mean=%0.4g P_std=%0.4g (%0.4g%%)" % (P_d, P_mc, P_std, pct))
         
         # Plot 3: FAP model fit
         plt.subplot(1, 3, 3)
