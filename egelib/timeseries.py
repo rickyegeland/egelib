@@ -239,6 +239,12 @@ def season_indices(t, edges=None, hard=False):
             seasons = seasons[:-1]
     return seasons
 
+def ensure_tarray(t):
+    if t.size == 1 and len(t.shape) == 0:
+        return astropy.time.Time([t])
+    else:
+        return t
+
 def seasonal_series(t, y, edges=None, hard=False):
     """
     Return array of time series for each season.
@@ -248,6 +254,9 @@ def seasonal_series(t, y, edges=None, hard=False):
     >>> for i in range(len(ts)):
     >>>     print "Season %i has time samples %s and data %s" % (i, ts[i], ys[i])
     """
+    t = ensure_tarray(t)
+    if len(t) == 1:
+        return [t], [y]
     season_ixs = season_indices(t, edges=edges, hard=hard)
     ts = []
     ys = []
