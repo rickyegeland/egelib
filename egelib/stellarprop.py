@@ -7,6 +7,7 @@ import numpy as np
 #   Source: IAU 2015 Resolution B2, B3
 L0 = 3.0128e28 # W
 LSUN = 3.828e26 # W
+LSUN_cgs = LSUN * 1e7 # erg s^-1
 TSUN = 5772. # K
 RSUN = 6.957e8 # m
 MBOL_SUN = -2.5 * np.log10(LSUN/L0)
@@ -97,7 +98,7 @@ def noyes84_rossby(P, BmV):
     tau_c = noyes84_tau_c(BmV)
     return P/tau_c
 
-def noyes84_rossby_activity(logRpHk):
+def noyes84_rossby_activity(logRpHK):
     """Return the Rossby number given the activity
     
     Ref: Noyes et al. 1984 eq (3)"""
@@ -146,12 +147,34 @@ def saar99_rossby_empirical(P, BmV):
     return P/(4.*np.pi*tau_c)
 
 # Barnes 2007; altered Skumanich
-def t_gyro_barnes(P, BmV, n=0.5189, a=0.7725, b=0.601):
-    logt = (1./n) * (np.log10(P) - np.log10(a) - b * np.log10(BmV - 0.4))
-    return 10 ** logt # Myr
+def barnes07_age_Prot(Prot, BmV, n=0.5189, a=0.7725, b=0.601, c=0.40):
+    """Returns age (Gyr) as a function of rotation period and B-V color
 
-def Prot_chrono_barnes(t, BmV, n=0.5189, a=0.7725, b=0.601):
-    logP = n * np.log10(t) + b * np.log10(BmV - 0.4) + np.log10(a)
+    Ref: Barnes 2007 eq. (3)
+    """
+    # TODO: uncertainties
+    logt = (1./n) * (np.log10(Prot) - np.log10(a) - b * np.log10(BmV - c))
+    t = 10 ** logt # Myr
+    return t / 1000. # Gyr
+
+def barnes07_Prot_age(t, BmV, n=0.5189, a=0.7725, b=0.601, c=0.40, unit='Gyr'):
+    """Returns Prot (days) as a function of age and B-V color
+
+    Ref: Barnes 2007 eq. (3)
+
+    unit := units of age (Gyr (default), yr, or Myr)
+    """
+    # TODO: uncertainties
+    if unit == 'Gyr':
+        t = t * 1000. # Gyr -> Myr
+    elif unit == 'yr':
+        t = t / 1e6 # yr -> Myr
+    elif unit == 'Myr':
+        pass
+    else:
+        raise Exception("Unsupported time unit '%s'" % unit)
+    # Expects t in Myr
+    logP = n * np.log10(t) + b * np.log10(BmV - c) + np.log10(a)
     return 10 ** logP # days
 
 def t_chromo_duncan(RpHK, a=10.725, b=-1.334, c=0.4085, d=-0.0522):
@@ -167,31 +190,142 @@ def t_chromo_soderblom(logRpHK, a=-1.50, b=2.25):
 def t_gyro_guinan(P, y0=1.865, a=-2.854, b=0.08254):
     return ( -(np.log10(P) + y0) / a )**(1./b)
 
-def mamajek08_logRpHK(Ro):
+def mamajek08_Ro_logRpHK(logRpHK, extrapolate=False):
+    """Mamajek 2008 Rossby number as a function of activity"""
+    # Mamjek relations only valid up to logRpHK = -5.0
+    # Use eq (5) to find the corresponding max Ro (~2.23)
+    logRpHK = np.asarray(logRpHK)
+    scalar_input = False
+    if logRpHK.ndim == 0:
+        logRpHK = logRpHK[None]
+        scalar_input = True
+    active = (logRpHK >= -5.0) & (logRpHK <= -4.3)
+    very_active = logRpHK > -4.3
+    inactive = logRpHK < -5.0
+    Ro = np.ones_like(logRpHK)
+    Ro[active] = 0.808 - 2.96 * (logRpHK[active] + 4.52) # eq (5)
+    Ro[very_active] = 0.233 - 0.689 * ( logRpHK[very_active] + 4.23) # eq (7)
+    if extrapolate:
+        Ro[inactive] = 0.808 - 2.96 * (logRpHK[inactive] + 4.52) # eq (5)
+    else:
+        Ro[inactive] = np.nan
+    if scalar_input:
+        return np.squeeze(Ro)
+    return Ro
+
+def mamajek08_Prot_logRpHK(logRpHK, BmV, extrapolate=False):
+    Ro = mamajek08_Ro_logRpHK(logRpHK, extrapolate=extrapolate)
+    tau_c = noyes84_tau_c(BmV)
+    return Ro * tau_c
+
+def mamajek08_logRpHK_Ro_max():
+    """The maximum Rossby number in Mamajek et al. 2008's empirical fit
+    
+    They cut log(RpHK) > -5.0, so we apply their equation (5) to that value.
+    The result is ~ 2.23
+    """
+    return mamajek08_Ro_logRpHK(-5.0)
+
+def mamajek08_logRpHK_Ro(Ro, extrapolate=False):
     """Activity logR'_HK as a function of Rossby number
 
     Ref: Mamajek et al. 2008 equations (6) and (8)
     Note: Ro is from Noyes et al. 1984 (see noyes84_rossby())
           valid only for -5.0 < logRpHK < -4.3
     """
+    # Mamjek relations only valid up to logRpHK = -5.0
+    # Use eq (5) to find the corresponding max Ro (~2.23)
+    Ro_max = mamajek08_logRpHK_Ro_max()
+    Ro_edge = 0.4
+    Ro = np.asarray(Ro)
+    scalar_input = False
+    if Ro.ndim == 0:
+        Ro = Ro[None]
+        scalar_input = True
     # TODO: uncertainties!
-    if Ro < 0.4: # very active: equation (8)
-        return -4.23 - 1.451 * (Ro - 0.233)
-    elif (Ro >= 0.4) and (Ro < 2.2): # "normal" activity: equaiton (6)
-        return -4.522 - 0.337 * (Ro - 0.814)
-    else: # Ro >= 2.2 is undefined
-        return np.nan
-
-def act_age_mamajek08(t):
-    """Activity logR'_HK as a function of age
+    fast = Ro < Ro_edge
+    mid = (Ro >= Ro_edge) & (Ro <= Ro_max)
+    slow = Ro > Ro_max
+    logRpHK = np.ones_like(Ro) * np.nan
+    logRpHK[mid] =  -4.522 - 0.337 * (Ro[mid] - 0.814) # "normal" activity: equaiton (6)
+    logRpHK[fast] = -4.23 - 1.451 * (Ro[fast] - 0.233) # very active: equation (8)
+    if extrapolate:
+        logRpHK[slow] = -4.522 - 0.337 * (Ro[slow] - 0.814)
+    else:
+        logRpHK[slow] = np.nan # Ro >= ~2.23 is undefined
+    if scalar_input:
+        return np.squeeze(logRpHK)
+    return logRpHK
+    
+def mamajek08_logRpHK_age(t):
+    """Activity logR'_HK as a function of age (in Gyr)
 
     Ref: Mamajek et al. 2008 equation (4)
     Note: valid for log(R'_HK) in [-4.0,-5.1] and log(t) in [6.7,9.9]
     """
     # TODO: uncertainties!
-    logt = np.log10(t)
+    logt = np.log10(t * 1e9) # log([yr])
     logRpHK = 8.94 - 4.849 * logt + 0.624 * logt**2 - 0.028 * logt**3
     return logRpHK
+
+def mamajek08_age_logRpHK(logRpHK):
+    """Age (in Gyr) as a function of activity log(R'_HK)
+
+    Ref: Mamajek & Hillebrand 2008 equation (3)
+    Note: valid for log(R'_HK) in [-4.0,-5.1] and log(t) in [6.7,9.9]
+    """
+    # TODO: uncertainties!
+    logt = -38.053 - 17.912 * logRpHK - 1.6675 * logRpHK**2
+    return 10**logt / 1e9 # Gyr
+
+def mamajek08_logRpHK_logRx(logRx, e_logRx=None):
+    """Activity log(R'_HK) as a function of activity log(R_X)
+
+    Ref: Mamajek et al. 2008 equation (A1)
+    Note: valid for log(R_X) in (-2.8, -7.4)
+    """
+    logRpHK =  -4.54 + 0.289 * (logRx + 4.92)
+    if e_logRx is None:
+        return logRpHK
+    else:
+        # logRpHK = p1 + p2 * (logRx + p3) = p1 + p2p3 + p2logRx
+        p1 = -4.90
+        e_p1 = 0.01
+        p2 = 0.289
+        e_p2 = 0.015
+        p3 = 4.92
+        p2p3 = p2 * p3
+        e_p2p3 = p3 * e_p2
+        p2logRx = p2 * logRx
+        e_p2logRx = p2logRx * np.sqrt( (e_p2/p2)**2 + (e_logRx/logRx)**2)
+        e_logRpHK = np.sqrt(e_p1**2 + e_p2p3**2 + e_p2logRx**2)
+        return logRpHK, e_logRpHK
+
+def mamajek08_Prot_age(t, BmV, unit='Gyr'):
+    """Returns rotation period as a function of age and B-V color
+
+    Ref: Mamajek & Hillebrand 2008 Table 10, equations 12--14
+    Uses same function defined in Barnes 2007, revises the parameters
+    """
+    return barnes07_Prot_age(t, BmV, unit=unit, a=0.407, b=0.325, c=0.495, n=0.566)
+
+def mamajek08_age_Prot(Prot, BmV):
+    """Returns age as a function of rotation period and B-V color
+
+    Ref: Mamajek & Hillebrand 2008 Table 10, equations 12--14
+    Uses same function defined in Barnes 2007, revises the parameters
+    """
+    return barnes07_age_Prot(Prot, BmV, a=0.407, b=0.325, c=0.495, n=0.566)
+
+def mamajek08_age2_logRpHK(logRpHK, BmV, extrapolate=False):
+    """Age (in years) as a function of activity log(R'_HK) and B-V color
+
+    Ref: Mamajek 2008 section 4.4.  First converts activity to rotation period,
+         then rotation period to age.
+    Note: valid for log(R'_HK) in [-4.0,-5.1] and log(t) in [6.7,9.9]
+    """
+    Prot = mamajek08_Prot_logRpHK(logRpHK, BmV, extrapolate=extrapolate)
+    return mamajek08_age_Prot(Prot, BmV)
 
 def differential_rotation(lat, A, B, C):
     """Return standard differential rotation profile \Omega = A + B*sin(lat)**2 + C*sin(lat)**4
@@ -498,3 +632,19 @@ def angular_diam(R, plx):
     d_m = d_AU * AU # m
     theta_rad = R_m / d_m # radians
     return theta_rad / mas2rad # mas
+
+def wright2004_main_sequence(BmV):
+    """Returns the function M_V(B-V) that defines the MS in Wright 2004"""
+    
+    coeffs = np.array([1.11255, 5.79062, -16.76829, 76.47777, -140.08488,
+                       127.38044, -49.71805,  8.24265, 14.07945, -3.43155])[::-1]
+    M_V = np.poly1d(coeffs)
+    return M_V(BmV)
+
+def wright2004_dVMag(BmV, VMag):
+    """Returns Delta VMag, height above the main sequence"""
+    return wright2004_main_sequence(BmV) - VMag
+
+def wright2004_is_evolved(BmV, VMag):
+    """Returns boolean array whether a star is evolved according to Wright 2004"""
+    return wright2004_dVMag(BmV, VMag) >= 1.0
