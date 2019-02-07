@@ -53,9 +53,51 @@ def ols_alpha(beta, x_mean, y_mean):
     # OLS-bisector: Isobe et al. 1990
     return y_mean - beta * x_mean
 
+def ols_xy(x, y):
+    N = len(x)
+    ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0) * N
+    beta1 = Sxy / Sxx
+    x_mean = x.mean()
+    y_mean = y.mean()
+    alpha1 = ols_alpha(beta1, x_mean, y_mean)
+    x_diff = x - x_mean
+    y_diff = y - y_mean
+    var = np.sum( x_diff**2 * (y_diff - beta1*x_diff)**2)/Sxx**2
+    e_beta1 = np.sqrt(var)
+
+    return beta1, alpha1, e_beta1
+
+def ols_yx(x, y):
+    N = len(x)
+    ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0) * N
+    beta2 = Syy / Syx
+    x_mean = x.mean()
+    y_mean = y.mean()
+    alpha2 = ols_alpha(beta2, x_mean, y_mean)
+    x_diff = x - x_mean
+    y_diff = y - y_mean
+    var = np.sum( y_diff**2 * (y_diff - beta2*x_diff)**2)/Sxy**2
+    e_beta2 = np.sqrt(var)
+    return beta2, alpha2, e_beta2
+
 def ols_bisector_beta(beta1, beta2):
     beta3 = (beta1*beta2 - 1. + np.sqrt((1. + beta1**2)*(1. + beta2**2)))/(beta1 + beta2)
     return beta3
+
+def ols_bisector_beta_err(x, y, beta1, beta2, e_beta1, e_beta2):
+    N = len(x)
+    ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0) * N
+    beta3 = ols_bisector_beta(beta1, beta2)
+    x_diff = x - np.mean(x)
+    y_diff = y - np.mean(y)
+    cov =  np.sum( x_diff * y_diff * (y_diff - beta1*x_diff) * (y_diff - beta2*x_diff)) / (beta1*Sxx**2)
+    factor = beta3**2 / ((beta1 + beta2)**2 * (1 + beta1**2) * (1 + beta2**2))
+    sum = ((1 + beta2**2)**2 * e_beta1**2 +
+           (1 + beta1**2)**2 * e_beta2**2 +
+           2 * (1 + beta1**2) * (1 + beta2**2) * cov)
+    var = factor * sum
+    std = np.sqrt(var)
+    return std
 
 def ols_bisector_params(beta1, beta2, x_mean, y_mean):
     beta3 = ols_bisector_beta(beta1, beta2)
@@ -63,13 +105,15 @@ def ols_bisector_params(beta1, beta2, x_mean, y_mean):
     return [beta3, alpha3]
 
 def ols_bisector(x, y):
-    params1 = scipy.stats.linregress(x, y)
-    params2 = scipy.stats.linregress(y, x)
-    params2i = [1./params2[0], -params2[1]/params2[0]]
-    return ols_bisector_params(params1[0], params2i[0], np.mean(x), np.mean(y))
-
+    beta1, alpha1, e_beta1 = ols_xy(x, y)
+    beta2, alpha2, e_beta2 = ols_yx(x, y)
+    (beta3, alpha3) = ols_bisector_params(beta1, beta2, np.mean(x), np.mean(y))
+    e_beta3 = ols_bisector_beta_err(x, y, beta1, beta2, e_beta1, e_beta2)
+    return beta3, alpha3, e_beta3
+    
 def ols_bisector_werrs_beta(x, y, e_x, e_y):
     # Feigelson & Babu 1992 equations 1-6, but see erratum
+    # TODO: Check if N is needed with cov
     e_ratio = (e_y/e_x)**2
     ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0)
     S_diff = (Syy - e_ratio*Sxx)
