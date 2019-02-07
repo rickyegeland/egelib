@@ -15,6 +15,10 @@ def query_simbad(obj):
     return result
 
 def query_mes(obj, mes):
+    """Query simbad measurements
+
+    See http://simbad.u-strasbg.fr/Pages/guide/chG.htx for descriptions
+    """
     simbad = astroquery.simbad.Simbad()
     request = "\n".join(['format object f1 "%%MEASLIST(%s)"' % mes, 'id %s' % obj])
     request = dict(script=request)
@@ -23,14 +27,27 @@ def query_mes(obj, mes):
     return result.data
 
 def query_feh(obj):
+    """Query list of Fe/H, Teff, logg measurements"""
+    # Example format
+    # 0         1         2         3         4         5         6
+    # 01234567890123456789012345678901234567890123456789012345678901234
+    # Fe_H  |Teff  log.g | Fe_H  c|CompStar |CatNo|     Reference     |
+    # Fe_H  | 6335 4.185 |        |         |     |2017ApJS..233...23S|
+    # Fe_H  | 6688 4.193 |        |         |     |2017ApJS..233...23S|
+    # Fe_H  | 6600 4.174 |        |         |     |2017A&A...601A..67C|
+    # Fe_H  | 6761       |        |SUN      |     |2011A&A...530A.138C|
+    # Fe_H  | 6068 4.17  |-0.68   |SUN      |     |2016A&A...594A..39F|
+    # Fe_H  | 6462 3.95  |-0.06   |SUN      |     |2013MNRAS.434.1422M|
+    # Fe_H  | 6700 4.16  |-0.02   |SUN      |     |2012MNRAS.423..122B|
+    # Fe_H  | 6741 4.16  |-0.02   |SUN      |     |2013MNRAS.433.3227K|
     result = query_mes(obj, 'fe_h')
     if result is None:
-        raise Exception("No FeH data in SIMBAD for object "+obj)
+        raise Exception("No fe_h data in SIMBAD for object "+obj)
     table = astropy.io.ascii.read(result,
                                   format='fixed_width',
-                                  names=('mes', 'Teff', 'logg', 'Fe_H', 'flag', 'CompStar', 'CatNo', 'References'),
-                                  col_starts=(0,  8, 14, 20, 25, 27, 37, 43),
-                                  col_ends=  (3, 11, 17, 23, 25, 35, 41, 61))
+                                  names=('Teff', 'logg', 'fe_h', 'flag', 'compstar', 'catno', 'bibcode'),
+                                  col_starts=( 8, 13, 20, 27, 29, 39, 45),
+                                  col_ends=  (11, 17, 25, 27, 37, 43, 63))
     return table
 
 def query_feh_median(obj):
@@ -39,10 +56,42 @@ def query_feh_median(obj):
     table = astropy.table.Table([[obj]], names=['ID'])
     for col in cols:
         valid = np.logical_not(feh[col].mask)
-        coldata = feh[col][valid]
+        coldata = np.array(feh[col][valid])
         table[col+'_med'] = [np.median(coldata)]
         table[col+'_madstd'] = [egelib.stats.mad_sigma(coldata)]
         table[col+'_N'] = [valid.sum()]
+    return table
+
+def query_rot(obj):
+    """Query list of vsini measurements"""
+    # Example format:
+    # 0         1         2         3         4         5         
+    # 012345678901234567890123456789012345678901234567890123
+    # ROT  |  Vsini  [  err   ] (mes)|Q|     reference     |
+    # ROT  | 122     [ 26     ] (   )| |2016A&A...594A..39F|
+    # ROT  |  18.3   [  1.0   ] (   )| |2013MNRAS.434.1422M|
+    # ROT  |  23.5   [        ] (   )| |2012MNRAS.423..122B|
+    # ROT  |  23.5   [        ] (   )|D|2012MNRAS.423..122B|
+    result = query_mes(obj, 'rot')
+    if result is None:
+        raise Exception("No rot data in SIMBAD for object "+obj)
+    table = astropy.io.ascii.read(result,
+                                  format='fixed_width',
+                                  names=('lim', 'vsini', 'e_vsini', 'N_mes', 'qual', 'bibcode'),
+                                  col_starts=(6,  7, 16, 27, 32, 34),
+                                  col_ends=  (6, 13, 23, 29, 32, 52))
+    return table
+
+def query_rot_median(obj):
+    # TODO: bugfix: median includes upper limit values
+    rot = query_rot(obj)
+    col = 'vsini'
+    table = astropy.table.Table([[obj]], names=['ID'])
+    valid = np.logical_not(rot[col].mask)
+    coldata = np.array(rot[col][valid])
+    table[col+'_med'] = [np.median(coldata)]
+    table[col+'_madstd'] = [egelib.stats.mad_sigma(coldata)]
+    table[col+'_N'] = [valid.sum()]
     return table
 
 def query_logg(obj, pref=('J/AJ/141/90/table2-1','J/AJ/141/90/table2-2', 'J/AJ/141/90/table1-2')):
@@ -171,3 +220,12 @@ def query_TLRM_list(obj_list):
     neworder = ['ORDER', 'INPUT'] + querycols
     result = result[neworder]
     return result
+
+def crossmatch(catA, coordA, catB, coordB, thresh=5 * astropy.units.arcsec):
+    """Return cross-matched tables A + B"""
+    match_ix, d2d, d3d = coordA.match_to_catalog_sky(coordB)  
+    match_thresh = (d2d < thresh)
+    N_match = match_thresh.sum()
+    matched = astropy.table.hstack([catA[match_thresh], catB[match_ix[match_thresh]]])
+    matched['dist'] = d2d[match_thresh].to(astropy.units.arcsec)
+    return matched
