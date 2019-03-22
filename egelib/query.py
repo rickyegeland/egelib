@@ -40,6 +40,12 @@ def query_feh(obj):
     # Fe_H  | 6462 3.95  |-0.06   |SUN      |     |2013MNRAS.434.1422M|
     # Fe_H  | 6700 4.16  |-0.02   |SUN      |     |2012MNRAS.423..122B|
     # Fe_H  | 6741 4.16  |-0.02   |SUN      |     |2013MNRAS.433.3227K|
+    #
+    # TODO: SIMBAD results sometimes break their fixed width, e.g.: HD 210918
+    # Fe_H  | 5797 4.5   |-0.07   |SUN      |     |2016A&A...586A..49B|
+    # Fe_H  | 5746 4.31  |115      |SUN      |     |2016A&A...592A.156D|
+    # Fe_H  | 5725 4.30  |        |         |     |2015A&A...579A..20M|
+    # The parsing below collects corrupted data because of this!
     result = query_mes(obj, 'fe_h')
     if result is None:
         raise Exception("No fe_h data in SIMBAD for object "+obj)
