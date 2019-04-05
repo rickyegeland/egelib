@@ -30,3 +30,21 @@ def set_ticks(majmult, minmult, majlen=10, minlen=5, size=18, axis='y'):
     ax.set_minor_locator(mpl.ticker.MultipleLocator(minmult))
     ax.set_tick_params(which='major', direction='in', labelsize=size, length=majlen)
     ax.set_tick_params(which='minor', direction='in', length=minlen)
+
+def logerrorbar(x, y, yerr=None, xerr=None, logx=False, logy=False, ax=None, **kwargs):
+    """Plot an errorbar plot with values and errors transformed to log10"""
+    if ax is None:
+        ax = plt.gca()
+    if logx:
+        logx = np.log10(x)
+        logxp = np.log10(x + xerr) - logx
+        logxm = logx - np.log10(x - xerr)
+        x = logx
+        xerr = np.array([logxp, logxm])
+    if logy:
+        logy = np.log10(y)
+        logyp = np.log10(y + yerr) - logy
+        logym = logy - np.log10(y - yerr)
+        y = logy
+        yerr = np.array([logyp, logym])
+    ax.errorbar(x, y, yerr, xerr, **kwargs)
