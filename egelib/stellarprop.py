@@ -11,8 +11,11 @@ LSUN_cgs = LSUN * 1e7 # erg s^-1
 TSUN = 5772. # K
 RSUN = 6.957e8 # m
 MBOL_SUN = -2.5 * np.log10(LSUN/L0)
+FBOL_SUN = LSUN / (4 * np.pi * RSUN**2) # W m^-2
 GMSUN = 1.3271244e20 # m^3 s^-2
 AU = 149597870700. # m, IAU Resolution 1 (1976)
+MAS2RAD = 1000. / 3600. * np.pi / 180. # 1 rad / 1 mas
+
 
 def noyes84_logRpHK(S, BmV):
     """Return R prime HK, the color-corrected activity index
@@ -78,25 +81,43 @@ def noyes84_logRpHK_error(S, e_S, BmV, e_BmV):
     # result as standard deviation
     return np.sqrt(var_logRpHK)
 
-def noyes84_tau_c(BmV):
+def noyes84_tau_c(BmV, e_BmV=None):
     """Return tau_c, the turbulent convective turnover time [days]
 
     Ref: Noyes et al. 1984"""
     BmV = np.asarray(BmV)
     log_tau_c = np.zeros_like(BmV)
     x = 1 - BmV
-    sel = x > 0
-    notsel = np.logical_not(sel)
-    log_tau_c[sel] = 1.362 - 0.166*x[sel] + 0.025*x[sel]**2 - 5.323*x[sel]**3
-    log_tau_c[notsel] = 1.362 - 0.14*x[notsel]
-    return 10**log_tau_c # units: days
+    blue = x > 0
+    red = np.logical_not(blue)
+    log_tau_c[blue] = 1.362 - 0.166*x[blue] + 0.025*x[blue]**2 - 5.323*x[blue]**3
+    log_tau_c[red] = 1.362 - 0.14*x[red]
+    tau_c = 10**log_tau_c # [days]
+    if e_BmV is not None:
+        e_BmV = np.asarray(e_BmV)
+        if e_BmV.size == 1:
+            e_BmV = np.ones_like(BmV) * e_BmV
+        e_log_tau_c = np.zeros_like(e_BmV)
+        e_log_tau_c[blue] = e_BmV[blue] * np.sqrt((-0.166 + 2*0.025*x[blue] - 3*5.323*x[blue]**2)**2)
+        e_log_tau_c[red] = e_BmV[red] * 0.14
+        e_tau_c = np.abs(tau_c * np.log(10) * e_log_tau_c)
+        return tau_c, e_tau_c
+    else:
+        return tau_c
 
-def noyes84_rossby(P, BmV):
+def noyes84_rossby(P, BmV, e_P=None, e_BmV=None):
     """Return the Rossby number = P[days]/tau_c, using tau_c
     
     Ref: Noyes et al. 1984"""
-    tau_c = noyes84_tau_c(BmV)
-    return P/tau_c
+    if e_P is None:
+        tau_c = noyes84_tau_c(BmV)
+        Ro = P/tau_c
+        return Ro
+    else:
+        tau_c, e_tau_c = noyes84_tau_c(BmV, e_BmV)
+        Ro = P/tau_c
+        e_Ro = np.sqrt( Ro**2 * (e_P/P)**2 + (e_tau_c/tau_c)**2)
+        return Ro, e_Ro
 
 def noyes84_rossby_activity(logRpHK):
     """Return the Rossby number given the activity
@@ -190,6 +211,28 @@ def t_chromo_soderblom(logRpHK, a=-1.50, b=2.25):
 def t_gyro_guinan(P, y0=1.865, a=-2.854, b=0.08254):
     return ( -(np.log10(P) + y0) / a )**(1./b)
 
+def mamajek08_logRpHK_edge():
+    """The dividing point between Mamajek et al. 2008's "active" and "very active" samples
+
+    Mamjek says the edge is -4.3, but in their Fig 7 their curves
+    clearly intersect at a lesser value.  Using -4.3 results in a
+    step discontinuity.  Here, we calculate the Ro where the curves
+    intersect, the result is .
+
+    logRpHK_edge = (-(0.808 - 0.233) - (0.689*4.23 - 2.966*4.52)) / (0.689 - 2.966)
+    -4.355226174791392
+    """
+    return -4.355226174791392
+
+def mamajek08_logRpHK_max():
+    """The maximum valid value of logRpHK using Mamajek's relations
+
+    From setting Mamajek et al. 2008 eq 7 = 0.
+    logRpHK_min = (0.233/0.689) - 4.23
+    -3.8918287373004357
+    """
+    return -3.8918287373004357
+
 def mamajek08_Ro_logRpHK(logRpHK, extrapolate=False):
     """Mamajek 2008 Rossby number as a function of activity"""
     # Mamjek relations only valid up to logRpHK = -5.0
@@ -199,16 +242,18 @@ def mamajek08_Ro_logRpHK(logRpHK, extrapolate=False):
     if logRpHK.ndim == 0:
         logRpHK = logRpHK[None]
         scalar_input = True
-    active = (logRpHK >= -5.0) & (logRpHK <= -4.3)
-    very_active = logRpHK > -4.3
+    logRpHK_edge = mamajek08_logRpHK_edge()
+    active = (logRpHK >= -5.0) & (logRpHK <= logRpHK_edge)
+    very_active = logRpHK > logRpHK_edge
     inactive = logRpHK < -5.0
     Ro = np.ones_like(logRpHK)
-    Ro[active] = 0.808 - 2.96 * (logRpHK[active] + 4.52) # eq (5)
+    Ro[active] = 0.808 - 2.966 * (logRpHK[active] + 4.52) # eq (5)
     Ro[very_active] = 0.233 - 0.689 * ( logRpHK[very_active] + 4.23) # eq (7)
     if extrapolate:
-        Ro[inactive] = 0.808 - 2.96 * (logRpHK[inactive] + 4.52) # eq (5)
+        Ro[inactive] = 0.808 - 2.966 * (logRpHK[inactive] + 4.52) # eq (5)
     else:
         Ro[inactive] = np.nan
+    Ro[Ro < 0] = np.nan # Negative Ro is not valid
     if scalar_input:
         return np.squeeze(Ro)
     return Ro
@@ -226,6 +271,20 @@ def mamajek08_logRpHK_Ro_max():
     """
     return mamajek08_Ro_logRpHK(-5.0)
 
+def mamajek08_logRpHK_Ro_edge():
+    """The dividing point between Mamajek et al. 2008's "active" and "very active" samples
+
+    Mamjek says the edge is 0.4, but in their Fig 7 their curves
+    clearly intersect at a lesser value.  Using 0.4 results in a
+    step discontinuity.  Here, we calculate the Ro where the curves
+    intersect, the result is ~0.32.
+
+    Ro_edge = ((4.522 - 4.23) + (1.451*0.233 - 0.337*0.814)) / (1.451 - 0.337)
+    0.31935816876122064
+    """
+    Ro_edge = 0.31935816876122064
+    return Ro_edge
+
 def mamajek08_logRpHK_Ro(Ro, extrapolate=False):
     """Activity logR'_HK as a function of Rossby number
 
@@ -236,7 +295,7 @@ def mamajek08_logRpHK_Ro(Ro, extrapolate=False):
     # Mamjek relations only valid up to logRpHK = -5.0
     # Use eq (5) to find the corresponding max Ro (~2.23)
     Ro_max = mamajek08_logRpHK_Ro_max()
-    Ro_edge = 0.4
+    Ro_edge = mamajek08_logRpHK_Ro_edge()
     Ro = np.asarray(Ro)
     scalar_input = False
     if Ro.ndim == 0:
@@ -623,15 +682,18 @@ def inclination(vsini, R, Peq, e_vsini=0, e_R=0, e_Peq=0):
         sini = inclination_sini(vsini, R, Peq)
         return arcsin_lim(sini)
 
-def angular_diam(R, plx):
-    # R in Rsun units, plx in mas
-    mas2rad = 1000. / 3600. * np.pi / 180. # 1 rad / 1 mas
-    R_m = R * RSUN # meters
-    plx_rad = plx * mas2rad  # radians
+def distance(plx):
+    plx_rad = plx * MAS2RAD  # radians
     d_AU = 0.5 * 1/plx_rad # AU
     d_m = d_AU * AU # m
+    return d_m
+
+def angular_diam(R, plx):
+    # R in Rsun units, plx in mas
+    R_m = R * RSUN # meters
+    d_m = distance(plx) # meters
     theta_rad = R_m / d_m # radians
-    return theta_rad / mas2rad # mas
+    return theta_rad / MAS2RAD # mas
 
 def wright2004_main_sequence(BmV):
     """Returns the function M_V(B-V) that defines the MS in Wright 2004"""
