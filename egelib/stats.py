@@ -129,3 +129,31 @@ def ols_bisector_werrs(x, y, e_x, e_y):
     beta, e_beta = ols_werrs_beta(x, y, e_x, e_y)
     alpha = ols_alpha(beta, np.mean(x), np.mean(y))
     return ((beta, alpha), e_beta)
+
+def _ols_xy_interval(x, y, q, kind):
+    """Returns a function giving the +/- confidence interval around the OLS(X|Y) line
+
+    Reference: DeGroot & Schervish "Probability & Statistics" Fourth Edition, 2012, pp 715-716
+    """
+    n = x.size
+    beta1, beta0, std = ols_xy(x, y)
+    Y = np.poly1d((beta1, beta0))
+    T = scipy.stats.t.ppf(q, df=n-2)
+    Ssq = np.power(y - Y(x), 2).sum()
+    sigma = np.sqrt(Ssq/(n - 2))
+    x_mean = x.mean()
+    sx = np.sqrt(np.power((x - x_mean),2).sum())
+    print("XXX T=%0.3e Ssq=%0.3e sigma=%0.3e x_mean=%0.3e sx=%0.3e" % (T, Ssq, sigma, x_mean, sx))
+
+    if kind == 'confidence':
+        return lambda xx: T * sigma * np.sqrt( 1/n + ((xx - x_mean)/sx)**2 )
+    elif kind == 'prediction':
+        return lambda xx: T * sigma * np.sqrt( 1 + 1/n + ((xx - x_mean)/sx)**2 )
+    else:
+        raise Exception("invalid interval kind '%s'" % kind)
+
+def ols_xy_confidence(x, y, q):
+    return _ols_xy_interval(x, y, q, 'confidence')
+
+def ols_xy_prediction(x, y, q):
+    return _ols_xy_interval(x, y, q, 'prediction')
