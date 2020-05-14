@@ -54,6 +54,9 @@ def ols_alpha(beta, x_mean, y_mean):
     return y_mean - beta * x_mean
 
 def ols_xy(x, y):
+    # NOTE: this appears to be mislabeled in Isobe 1990 as OLS(X|Y) in Isobe, but is actually OLS(Y|X)
+    # Gives same result, except for e_beta1, as scipy.stats.linregress
+    # Produces a smaller residual in y than ols_yx() below
     N = len(x)
     ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0) * N
     beta1 = Sxy / Sxx
@@ -68,9 +71,10 @@ def ols_xy(x, y):
     return beta1, alpha1, e_beta1
 
 def ols_yx(x, y):
+    # NOTE: this appears to be mislabeled in Isobe 1990 as OLS(Y|X) in Isobe, but is actually OLS(X|Y)
     N = len(x)
     ((Sxx, Sxy), (Syx, Syy)) = np.cov(x, y, ddof=0) * N
-    beta2 = Syy / Syx
+    beta2 = Syy / Sxy
     x_mean = x.mean()
     y_mean = y.mean()
     alpha2 = ols_alpha(beta2, x_mean, y_mean)
@@ -143,7 +147,6 @@ def _ols_xy_interval(x, y, q, kind):
     sigma = np.sqrt(Ssq/(n - 2))
     x_mean = x.mean()
     sx = np.sqrt(np.power((x - x_mean),2).sum())
-    print("XXX T=%0.3e Ssq=%0.3e sigma=%0.3e x_mean=%0.3e sx=%0.3e" % (T, Ssq, sigma, x_mean, sx))
 
     if kind == 'confidence':
         return lambda xx: T * sigma * np.sqrt( 1/n + ((xx - x_mean)/sx)**2 )
