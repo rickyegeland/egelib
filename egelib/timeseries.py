@@ -552,7 +552,7 @@ def lombscargle_mc(t, Ntrials, y=None, **kwargs):
 
 def peaks_mc(t, y, e, thresh=0, N_trials=5000, N_peaks=None, **pgram_kwargs):
     """Obtain distribution of peak periods and L-S power given data with uncertainties"""
-    tstart = timeit.time.clock()
+    tstart = timeit.default_timer()
 
     def do_trial(**kwargs):
         y_jig = np.random.normal(y, e)
@@ -573,7 +573,7 @@ def peaks_mc(t, y, e, thresh=0, N_trials=5000, N_peaks=None, **pgram_kwargs):
         periods, pk_periods, pk_power = do_trial(periods=periods)
         mc_pk_periods = np.append(mc_pk_periods, pk_periods)
         mc_pk_power = np.append(mc_pk_power, pk_power)
-    tend = timeit.time.clock()
+    tend = timeit.default_timer()
     print("trials=%i peaks=%i thresh=%0.3g" % (N_trials, mc_pk_periods.size, thresh))
     print("%i trials of %i samples to %i periods in %f s" % \
         (N_trials, y.size, periods.size, tend - tstart))
